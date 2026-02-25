@@ -1,0 +1,50 @@
+services:
+  ai-agent:
+    build:
+      context: .
+      target: base
+    image: ai-agent:latest
+    container_name: ai-agent
+    stdin_open: true
+    tty: true
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Mount current directory to /workspace
+      - .:/workspace
+      # Persistent Claude Code state (credentials, history, settings)
+      - ai-agent-claude:/root/.claude
+      # Persistent AI tool configurations
+      - ai-agent-config:/root/.config
+      # Optional: Host CLAUDE.md override (uncomment if you have one)
+      # - ~/.claude/CLAUDE.md:/root/.claude/CLAUDE.md.host:ro
+      # Optional: Host settings override (uncomment if you have one)
+      # - ~/.claude/settings.json:/root/.claude/settings.json.host:ro
+      # Optional: Share git config from host
+      # - ~/.gitconfig:/root/.gitconfig:ro
+    working_dir: /workspace
+
+  # Full variant with browser automation
+  ai-agent-browsing:
+    build:
+      context: .
+      target: browsing
+    image: ai-agent-browsing:latest
+    container_name: ai-agent-browsing
+    stdin_open: true
+    tty: true
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - .:/workspace
+      - ai-agent-claude:/root/.claude
+      - ai-agent-config:/root/.config
+    working_dir: /workspace
+
+volumes:
+  ai-agent-claude:
+    name: ai-agent-claude
+  ai-agent-config:
+    name: ai-agent-config
