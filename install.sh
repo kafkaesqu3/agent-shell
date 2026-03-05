@@ -1,12 +1,12 @@
 #!/bin/bash
 # AI Agent Shell - Local Install Script
 # Configures the host Claude Code environment to match this repository's
-# best-practices config: MCP servers, statusline, CLAUDE.md, and PATH setup.
+# best-practices config: Claude Code, MCP servers, statusline, CLAUDE.md, PATH.
 #
-# Usage: ./install.sh [--docker-only] [--config-only] [--path-only]
+# Usage: ./install.sh [OPTIONS]
 #   No flags = full install (config + tools + Docker build + PATH setup)
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_HOME="$HOME/.claude"
@@ -28,23 +28,28 @@ err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 # Parse flags
 DO_CONFIG=true
 DO_TOOLS=true
-DO_DOCKER=true
+DO_DOCKER=false   # Off by default — most useful for VPS/host installs
 DO_PATH=true
 
 for arg in "$@"; do
   case "$arg" in
-    --docker-only) DO_CONFIG=false; DO_TOOLS=false; DO_PATH=false ;;
-    --config-only) DO_TOOLS=false; DO_DOCKER=false; DO_PATH=false ;;
-    --path-only)   DO_CONFIG=false; DO_TOOLS=false; DO_DOCKER=false ;;
-    --no-docker)   DO_DOCKER=false ;;
+    --docker)       DO_DOCKER=true ;;
+    --docker-only)  DO_CONFIG=false; DO_TOOLS=false; DO_PATH=false; DO_DOCKER=true ;;
+    --config-only)  DO_TOOLS=false; DO_DOCKER=false; DO_PATH=false ;;
+    --path-only)    DO_CONFIG=false; DO_TOOLS=false; DO_DOCKER=false ;;
+    --no-tools)     DO_TOOLS=false ;;
+    --no-path)      DO_PATH=false ;;
     --help|-h)
       echo "Usage: ./install.sh [OPTIONS]"
       echo ""
       echo "Options:"
+      echo "  (no flags)      Full install: config + tools + PATH (no Docker)"
+      echo "  --docker        Also build Docker images"
       echo "  --docker-only   Only build Docker images"
-      echo "  --config-only   Only install Claude Code config"
+      echo "  --config-only   Only install Claude Code config files"
       echo "  --path-only     Only set up PATH for launcher scripts"
-      echo "  --no-docker     Skip Docker build"
+      echo "  --no-tools      Skip tool installation"
+      echo "  --no-path       Skip PATH setup"
       echo "  -h, --help      Show this help"
       exit 0
       ;;
@@ -58,7 +63,7 @@ echo "╚═══════════════════════�
 echo -e "${NC}"
 
 ###############################################################################
-# 1. Claude Code Configuration
+# 1. Claude Code Configuration (CLAUDE.md, settings.json, statusline)
 ###############################################################################
 if [ "$DO_CONFIG" = true ]; then
   echo -e "${BOLD}--- Claude Code Configuration ---${NC}"
@@ -71,49 +76,35 @@ if [ "$DO_CONFIG" = true ]; then
 
   if [ -f "$HOST_SETTINGS" ]; then
     info "Merging MCP servers into existing $HOST_SETTINGS"
-    # Deep merge: repo mcpServers into host, preserving host's other keys
-    jq -s '.[0] * { mcpServers: (.[0].mcpServers // {} ) * .[1].mcpServers }' \
+    jq -s '.[0] * { mcpServers: (.[0].mcpServers // {}) * .[1].mcpServers }' \
       "$HOST_SETTINGS" "$REPO_SETTINGS" > /tmp/claude-settings-merged.json
 
-    # Replace env placeholders with actual env vars if set
     MERGED=/tmp/claude-settings-merged.json
-    if [ -n "$GITHUB_TOKEN" ]; then
-      sed -i "s|__GITHUB_TOKEN__|${GITHUB_TOKEN}|g" "$MERGED"
-    fi
-    if [ -n "$BRAVE_API_KEY" ]; then
-      sed -i "s|__BRAVE_API_KEY__|${BRAVE_API_KEY}|g" "$MERGED"
-    fi
+    [ -n "${GITHUB_TOKEN:-}" ] && sed -i "s|__GITHUB_TOKEN__|${GITHUB_TOKEN}|g" "$MERGED"
+    [ -n "${BRAVE_API_KEY:-}" ] && sed -i "s|__BRAVE_API_KEY__|${BRAVE_API_KEY}|g" "$MERGED"
 
-    cp "$HOST_SETTINGS" "$HOST_SETTINGS.bak"
+    cp "$HOST_SETTINGS" "${HOST_SETTINGS}.bak"
     mv "$MERGED" "$HOST_SETTINGS"
     ok "MCP servers merged (backup at settings.json.bak)"
   else
-    info "No existing settings.json found, copying from repo"
+    info "No existing settings.json — copying from repo"
     cp "$REPO_SETTINGS" "$HOST_SETTINGS"
-
-    # Patch placeholders
-    if [ -n "$GITHUB_TOKEN" ]; then
-      sed -i "s|__GITHUB_TOKEN__|${GITHUB_TOKEN}|g" "$HOST_SETTINGS"
-    fi
-    if [ -n "$BRAVE_API_KEY" ]; then
-      sed -i "s|__BRAVE_API_KEY__|${BRAVE_API_KEY}|g" "$HOST_SETTINGS"
-    fi
+    [ -n "${GITHUB_TOKEN:-}" ] && sed -i "s|__GITHUB_TOKEN__|${GITHUB_TOKEN}|g" "$HOST_SETTINGS"
+    [ -n "${BRAVE_API_KEY:-}" ] && sed -i "s|__BRAVE_API_KEY__|${BRAVE_API_KEY}|g" "$HOST_SETTINGS"
     ok "settings.json installed"
   fi
 
-  # --- CLAUDE.md ---
+  # --- CLAUDE.md: append if not already present ---
   REPO_CLAUDE_MD="$SCRIPT_DIR/claude-config/CLAUDE.md"
   HOST_CLAUDE_MD="$CLAUDE_HOME/CLAUDE.md"
+  MARKER="# Global Development Standards"
 
   if [ -f "$HOST_CLAUDE_MD" ]; then
-    # Check if the repo line is already present
-    if grep -qF "$(cat "$REPO_CLAUDE_MD")" "$HOST_CLAUDE_MD" 2>/dev/null; then
+    if grep -qF "$MARKER" "$HOST_CLAUDE_MD" 2>/dev/null; then
       ok "CLAUDE.md already contains repo instructions"
     else
       info "Appending repo CLAUDE.md instructions to existing file"
-      echo "" >> "$HOST_CLAUDE_MD"
-      echo "# --- AI Agent Shell defaults ---" >> "$HOST_CLAUDE_MD"
-      cat "$REPO_CLAUDE_MD" >> "$HOST_CLAUDE_MD"
+      { echo ""; echo "# --- AI Agent Shell defaults ---"; cat "$REPO_CLAUDE_MD"; } >> "$HOST_CLAUDE_MD"
       ok "CLAUDE.md updated"
     fi
   else
@@ -123,39 +114,45 @@ if [ "$DO_CONFIG" = true ]; then
 
   # --- statusline.sh ---
   REPO_STATUSLINE="$SCRIPT_DIR/claude-config/statusline.sh"
-  HOST_STATUSLINE="$CLAUDE_HOME/statusline.sh"
-
   if [ -f "$REPO_STATUSLINE" ]; then
-    cp "$REPO_STATUSLINE" "$HOST_STATUSLINE"
-    chmod +x "$HOST_STATUSLINE"
-    ok "statusline.sh installed to $HOST_STATUSLINE"
+    cp "$REPO_STATUSLINE" "$CLAUDE_HOME/statusline.sh"
+    chmod +x "$CLAUDE_HOME/statusline.sh"
+    ok "statusline.sh installed to $CLAUDE_HOME/statusline.sh"
   else
-    warn "No statusline.sh found in repo"
+    warn "statusline.sh not found in repo — skipping"
   fi
 
   echo ""
 fi
 
 ###############################################################################
-# 2. Install local MCP server dependencies
+# 2. Install Claude Code + MCP server dependencies
 ###############################################################################
 if [ "$DO_TOOLS" = true ]; then
-  echo -e "${BOLD}--- Installing MCP Server Dependencies ---${NC}"
+  echo -e "${BOLD}--- Installing Tools ---${NC}"
 
-  # Check for Node.js
+  # Node.js — required for Claude Code and all npm MCP servers
   if ! command -v node &>/dev/null; then
-    err "Node.js not found. Please install Node.js 18+ first."
-    exit 1
+    warn "Node.js not found — attempting install..."
+    if command -v apt-get &>/dev/null; then
+      curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+    elif command -v brew &>/dev/null; then
+      brew install node@22
+    else
+      err "Cannot auto-install Node.js. Install Node.js 18+ manually then re-run."
+      exit 1
+    fi
   fi
-  ok "Node.js $(node --version) found"
+  ok "Node.js $(node --version)"
 
-  # Check for npm
-  if ! command -v npm &>/dev/null; then
-    err "npm not found."
-    exit 1
-  fi
+  # Claude Code
+  info "Installing Claude Code..."
+  npm install -g @anthropic-ai/claude-code 2>&1 | tail -2
+  ok "Claude Code $(claude --version 2>/dev/null)"
 
-  info "Installing MCP servers globally via npm..."
+  # MCP servers (npm)
+  info "Installing MCP servers (npm)..."
   npm install -g \
     @modelcontextprotocol/server-filesystem \
     @modelcontextprotocol/server-github \
@@ -164,49 +161,48 @@ if [ "$DO_TOOLS" = true ]; then
     @modelcontextprotocol/server-sequential-thinking \
     @upstash/context7-mcp \
     @modelcontextprotocol/server-puppeteer \
-    @playwright/mcp 2>&1 | tail -5
-  ok "MCP servers installed"
+    @playwright/mcp 2>&1 | tail -3
+  ok "npm MCP servers installed"
 
-  # Python MCP fetch server
-  if command -v pip3 &>/dev/null; then
-    info "Installing Python MCP fetch server..."
-    pip3 install --quiet mcp-server-fetch 2>&1 | tail -3
-    ok "mcp-server-fetch installed"
-  elif command -v pip &>/dev/null; then
-    info "Installing Python MCP fetch server..."
-    pip install --quiet mcp-server-fetch 2>&1 | tail -3
-    ok "mcp-server-fetch installed"
+  # mcp-server-fetch (Python) — isolated venv avoids Ubuntu 24.04 system pip conflict
+  if command -v python3 &>/dev/null; then
+    FETCH_VENV="$HOME/.local/share/mcp-fetch-venv"
+    info "Installing mcp-server-fetch in venv at $FETCH_VENV..."
+    python3 -m venv "$FETCH_VENV"
+    "$FETCH_VENV/bin/pip" install --quiet mcp-server-fetch
+    mkdir -p "$HOME/.local/bin"
+    ln -sf "$FETCH_VENV/bin/mcp-server-fetch" "$HOME/.local/bin/mcp-server-fetch"
+    ok "mcp-server-fetch → $HOME/.local/bin/mcp-server-fetch"
   else
-    warn "pip not found - skipping mcp-server-fetch (Python). Install Python 3 for full functionality."
+    warn "python3 not found — skipping mcp-server-fetch"
   fi
 
   echo ""
 fi
 
 ###############################################################################
-# 3. Docker Build
+# 3. Docker Build (opt-in with --docker)
 ###############################################################################
 if [ "$DO_DOCKER" = true ]; then
   echo -e "${BOLD}--- Building Docker Images ---${NC}"
 
   if ! command -v docker &>/dev/null; then
-    err "Docker not found. Please install Docker first."
+    err "Docker not found. Install Docker then re-run with --docker."
     exit 1
   fi
-
   if ! docker info &>/dev/null 2>&1; then
-    err "Docker daemon not running. Please start Docker."
+    err "Docker daemon not running."
     exit 1
   fi
 
-  info "Building ai-agent:latest (base image)..."
+  info "Building ai-agent:latest (base)..."
   docker build -t ai-agent:latest --target base "$SCRIPT_DIR"
   ok "ai-agent:latest built"
 
   echo ""
-  read -p "Also build browsing variant (includes Chromium, larger image)? [y/N] " -n 1 -r
+  read -rp "Also build browsing variant (Chromium, ~2x larger)? [y/N] " -n 1
   echo ""
-  if [[ $REPLY =~ ^[Yy]$ ]]; then
+  if [[ ${REPLY:-n} =~ ^[Yy]$ ]]; then
     info "Building ai-agent-browsing:latest..."
     docker build -t ai-agent-browsing:latest --target browsing "$SCRIPT_DIR"
     ok "ai-agent-browsing:latest built"
@@ -216,36 +212,30 @@ if [ "$DO_DOCKER" = true ]; then
 fi
 
 ###############################################################################
-# 4. PATH Setup for Launcher Scripts
+# 4. PATH Setup for launcher scripts
 ###############################################################################
 if [ "$DO_PATH" = true ]; then
   echo -e "${BOLD}--- PATH Setup ---${NC}"
 
   mkdir -p "$CONFIG_DIR"
 
-  # Determine the user's shell profile
-  SHELL_NAME=$(basename "$SHELL")
+  SHELL_NAME=$(basename "${SHELL:-bash}")
   case "$SHELL_NAME" in
     zsh)  PROFILE="$HOME/.zshrc" ;;
     bash) PROFILE="$HOME/.bashrc" ;;
     *)    PROFILE="$HOME/.profile" ;;
   esac
 
-  # Create symlinks in ~/.local/bin (standard user bin dir)
   LOCAL_BIN="$HOME/.local/bin"
   mkdir -p "$LOCAL_BIN"
 
-  ln -sf "$SCRIPT_DIR/ai-agent.sh" "$LOCAL_BIN/ai-agent"
   chmod +x "$SCRIPT_DIR/ai-agent.sh"
-  ok "Symlinked ai-agent -> $LOCAL_BIN/ai-agent"
+  ln -sf "$SCRIPT_DIR/ai-agent.sh" "$LOCAL_BIN/ai-agent"
+  ok "Symlinked ai-agent → $LOCAL_BIN/ai-agent"
 
-  # Check if ~/.local/bin is in PATH
   if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
-    info "Adding $LOCAL_BIN to PATH in $PROFILE"
-    echo "" >> "$PROFILE"
-    echo "# AI Agent Shell - added by install.sh" >> "$PROFILE"
-    echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$PROFILE"
-    ok "PATH updated in $PROFILE (restart shell or run: source $PROFILE)"
+    { echo ""; echo "# AI Agent Shell — added by install.sh"; echo "export PATH=\"\$HOME/.local/bin:\$PATH\""; } >> "$PROFILE"
+    ok "PATH updated in $PROFILE (run: source $PROFILE)"
   else
     ok "$LOCAL_BIN already in PATH"
   fi
@@ -253,7 +243,7 @@ if [ "$DO_PATH" = true ]; then
   # Copy .env template if none exists
   if [ ! -f "$CONFIG_DIR/.env" ]; then
     cp "$SCRIPT_DIR/.env.example" "$CONFIG_DIR/.env"
-    info "Copied .env template to $CONFIG_DIR/.env - edit with your API keys"
+    info "Copied .env template → $CONFIG_DIR/.env (edit with your API keys)"
   fi
 
   echo ""
@@ -270,17 +260,15 @@ echo -e "${NC}"
 
 echo "Next steps:"
 if [ "$DO_CONFIG" = true ]; then
-  echo -e "  ${BLUE}1.${NC} Review ~/.claude/settings.json - replace any __PLACEHOLDER__ values"
-  echo -e "     with your actual API keys, or set them in your environment."
+  echo -e "  ${BLUE}•${NC} Review ~/.claude/settings.json"
+  echo -e "    Replace __GITHUB_TOKEN__ and __BRAVE_API_KEY__ if not set as env vars"
+fi
+if [ "$DO_TOOLS" = true ]; then
+  echo -e "  ${BLUE}•${NC} Run 'claude' to authenticate (claude.ai account or ANTHROPIC_API_KEY)"
 fi
 if [ "$DO_PATH" = true ]; then
-  echo -e "  ${BLUE}2.${NC} Edit $CONFIG_DIR/.env with your API keys"
-  echo -e "  ${BLUE}3.${NC} Run 'ai-agent' from any project directory to launch the container"
+  echo -e "  ${BLUE}•${NC} Edit $CONFIG_DIR/.env with your API keys"
+  echo -e "  ${BLUE}•${NC} Run 'ai-agent' from any project directory to launch the container"
+  echo -e "  ${YELLOW}Tip:${NC} On Windows use ai-agent.ps1 instead"
 fi
-if [ "$DO_DOCKER" = true ]; then
-  echo -e "  ${BLUE}4.${NC} Test: cd /some/project && ai-agent"
-fi
-echo ""
-echo -e "  ${YELLOW}Tip:${NC} On Windows, add this directory to your PATH manually"
-echo -e "  and use ai-agent.ps1 instead."
 echo ""

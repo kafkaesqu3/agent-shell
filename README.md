@@ -1,367 +1,318 @@
-# AI Agent Docker Container
+# AI Agent Shell
 
-A portable Docker container with multiple AI coding assistants that you can launch in any project directory.
+A portable AI development environment — either as a Docker container you launch in any project directory, or installed directly on a host/VPS. Bundles Claude Code with MCP servers, multiple AI tools, and best-practices configuration.
 
 ## What's Included
 
-### AI Coding Assistants
-- **Claude Code** - Anthropic's official CLI for code generation, refactoring, and debugging
-- **OpenAI Codex** - OpenAI's code generation model
-- **GitHub Copilot CLI** - Command-line suggestions and explanations
-- **Gemini Pro** - Google's Gemini AI models for coding tasks
-- **Aider** - AI pair programming in your terminal (supports Claude, GPT-4, Gemini)
-- **Shell-GPT** - Natural language shell command generation
-- **Fabric** - AI patterns framework for various development workflows
+### AI Assistants
+| Tool | Description |
+|------|-------------|
+| `claude` | Claude Code — Anthropic's agentic coding CLI |
+| `aider` | AI pair programming (supports Claude, GPT-4, Gemini) |
+| `sgpt` | Shell-GPT — natural language shell commands |
+| `gemini` | Google Gemini CLI |
+| `fabric` | AI patterns framework |
 
-### Development Tools
-- Node.js 22
-- Python 3 with pip
-- Go
-- Git
-- GitHub CLI (gh)
+### MCP Servers (Claude Code extensions)
+| Server | Purpose |
+|--------|---------|
+| `fetch` | Fetch and read web pages |
+| `filesystem` | Scoped file access at `/workspace` |
+| `github` | GitHub API (PRs, issues, repos) |
+| `sqlite` | Query SQLite databases |
+| `context7` | Up-to-date library documentation |
+| `sequential-thinking` | Structured multi-step reasoning |
+| `brave-search` | Web search via Brave |
+| `puppeteer` | Browser automation _(browsing image only)_ |
+| `playwright` | Browser automation/testing _(browsing image only)_ |
 
-## Workflow
+### Runtimes & Tools
+- Node.js 22 LTS, Python 3.12, Go 1.23
+- Git, GitHub CLI (`gh`), `jq`, `curl`
 
-The intended workflow is:
+### Claude Code Configuration
+- **Statusline** — two-line prompt with model, cost, context %, session time
+- **Safety guardrails** — blocks `rm -rf`, force-push, direct push to main/master
+- **Credential protection** — denies reading SSH keys, AWS/GCP creds, wallet files
+- **Telemetry disabled** — no usage reporting or feedback surveys
+- **Always-thinking mode** enabled
 
-1. **One-time setup**: Build the Docker image and configure your API keys
-2. **Daily use**: Navigate to any project directory and launch the AI agent container
-3. **Work**: Your current directory is mounted at `/workspace` with all AI tools available
-4. **Exit**: Type `exit` and you're back in your host terminal
+---
 
-## One-Time Setup
+## Install Options
 
-### Step 1: Build the Docker Image
+### Option A: Host / VPS install (no Docker)
 
-From this directory, build the image once:
-
-```bash
-docker build -t ai-agent:latest .
-```
-
-This creates the `ai-agent:latest` image that you'll reuse across all projects.
-
-### Step 2: Create Your .env File
-
-Create a `.env` file in a central location to store your API keys:
-
-**Option A: Store in your home directory (Recommended)**
+Installs Claude Code, all MCP servers, and config files directly on the host:
 
 ```bash
-# Linux/Mac
-mkdir -p ~/.config/ai-agent
-cp .env.example ~/.config/ai-agent/.env
-nano ~/.config/ai-agent/.env
-
-# Windows (PowerShell)
-New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.config\ai-agent"
-Copy-Item .env.example "$env:USERPROFILE\.config\ai-agent\.env"
-notepad "$env:USERPROFILE\.config\ai-agent\.env"
+git clone <this-repo> ~/ai-agent-shell
+cd ~/ai-agent-shell
+./install.sh
 ```
 
-**Option B: Store alongside the scripts (This directory)**
+This installs:
+- Node.js 22 (auto-installs via nodesource if missing)
+- `claude` CLI
+- All npm MCP servers globally
+- `mcp-server-fetch` in an isolated Python venv → symlinked to `~/.local/bin`
+- `~/.claude/CLAUDE.md` (appends if file exists)
+- `~/.claude/settings.json` (merges MCP servers if file exists; backs up original)
+- `~/.claude/statusline.sh`
+- `ai-agent` symlink in `~/.local/bin` (adds to PATH if needed)
+
+To also install dev tools (ripgrep, shellcheck, uv, ruff, cargo tools, etc.):
 
 ```bash
-cp .env.example .env
-nano .env  # or use your preferred editor
+./claude-config/setup.sh
 ```
 
-Fill in your API keys:
+After install, set your API keys (add to `~/.bashrc` or `~/.zshrc`):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export GITHUB_TOKEN=ghp_...
+export BRAVE_API_KEY=...
+```
+
+Or patch the placeholders directly in `~/.claude/settings.json`:
+
+```bash
+sed -i 's/__GITHUB_TOKEN__/ghp_yourtoken/g' ~/.claude/settings.json
+sed -i 's/__BRAVE_API_KEY__/yourbravkey/g' ~/.claude/settings.json
+```
+
+Then authenticate:
+
+```bash
+claude   # follows prompts to log in via claude.ai or API key
+```
+
+---
+
+### Option B: Docker container
+
+Build once, launch in any project directory.
+
+#### Build
+
+```bash
+# Base image (all AI tools, no browser)
+docker build -t ai-agent:latest --target base .
+
+# Optional: browsing variant (adds Chromium, Puppeteer, Playwright)
+docker build -t ai-agent-browsing:latest --target browsing .
+```
+
+Or use `install.sh --docker` to build as part of the full install:
+
+```bash
+./install.sh --docker
+```
+
+#### Configure API keys
+
+Create a `.env` file (gitignored). Pick a preset or start from the example:
+
+```bash
+cp .env.example ~/.config/ai-agent/.env   # recommended: central location
+# or
+cp .env.claude .env    # Claude-only
+cp .env.full .env      # all providers
+cp .env.browsing .env  # browsing + search focused
+```
+
+Edit the file and fill in your keys:
+
 ```env
-ANTHROPIC_API_KEY=sk-ant-your-actual-key-here
-OPENAI_API_KEY=sk-your-actual-key-here
-GOOGLE_API_KEY=your-actual-key-here
-GITHUB_TOKEN=ghp_your-actual-token-here
+ANTHROPIC_API_KEY=sk-ant-...
+GITHUB_TOKEN=ghp_...
+BRAVE_API_KEY=...
+OPENAI_API_KEY=sk-...    # optional
+GOOGLE_API_KEY=...        # optional
 ```
 
-### Step 3: Set Up the Launch Script
-
-You have two options:
-
-**Option A: Add to your PATH (Recommended for frequent use)**
+#### Add launcher to PATH
 
 ```bash
 # Linux/Mac
-chmod +x ai-agent.sh
-sudo cp ai-agent.sh /usr/local/bin/ai-agent
-# Or add this directory to your PATH
+./install.sh --path-only
+# Symlinks ai-agent.sh → ~/.local/bin/ai-agent
 
-# Windows (PowerShell as Administrator)
-# Add this directory to your PATH or copy to a PATH location
-Copy-Item ai-agent.ps1 "C:\Windows\System32\ai-agent.ps1"
+# Windows PowerShell — add this directory to your PATH manually
+# then use ai-agent.ps1
 ```
 
-**Option B: Copy to individual projects (Simple but repetitive)**
-
-Copy `ai-agent.sh` (Linux/Mac) or `ai-agent.ps1` (Windows) to each project where you want to use it.
-
-### Step 4: Configure Script Path (If Using Option A for .env)
-
-If you stored your `.env` in `~/.config/ai-agent/`, the scripts are already configured correctly.
-
-If you stored it elsewhere, edit the scripts and update the `EnvFile` / `ENV_FILE` path at the top.
-
-## Daily Use
-
-Once setup is complete, using the AI agent is simple:
-
-### 1. Clone or Navigate to Any Project
+#### Daily use
 
 ```bash
-# Clone a new repository
-git clone https://github.com/username/some-project.git
-cd some-project
-
-# Or navigate to an existing project
-cd ~/projects/my-awesome-app
+cd ~/projects/my-app
+ai-agent          # launches container with current dir mounted at /workspace
 ```
 
-### 2. Launch the AI Agent Container
+The launcher auto-detects `.env` from:
+1. `--env <path>` flag
+2. `.env` in the current directory
+3. `.env` in the script directory
+4. `~/.config/ai-agent/.env`
 
-**Linux/Mac:**
-```bash
-ai-agent        # If in PATH
-# or
-./ai-agent.sh   # If copied to project directory
-# or
-/path/to/docker-containers/ai-agent/ai-agent.sh  # Full path
+If your host has `~/.claude/CLAUDE.md` or `~/.claude/settings.json`, they are mounted into the container as overrides — your local config takes priority over the baked defaults.
+
+---
+
+## Configuration Layering
+
+Both install modes use the same layered config strategy:
+
+```
+/opt/claude-config/     ← baked defaults (CLAUDE.md, settings.json, statusline.sh)
+        ↓
+~/.claude/*.host        ← host mounts (Docker) or existing files (host install)
+        ↓
+entrypoint.sh patches   ← replaces __GITHUB_TOKEN__ / __BRAVE_API_KEY__ placeholders
+        ↓
+Claude Code starts with merged config
 ```
 
-**Windows PowerShell:**
-```powershell
-ai-agent        # If in PATH
-# or
-.\ai-agent.ps1  # If copied to project directory
-# or
-C:\_Ktools\Scripts\private\docker-containers\ai-agent\ai-agent.ps1  # Full path
+In Docker, baked defaults apply on first run. Once the `ai-agent-claude` volume has a `settings.json`, it persists across containers. Mounting your host `~/.claude/settings.json` as `.host` overrides the baked version on every launch.
+
+---
+
+## File Structure
+
+```
+agent-shell/
+├── Dockerfile              # Multi-stage: base + browsing targets
+├── docker-compose.yml      # Two services: ai-agent, ai-agent-browsing
+├── entrypoint.sh           # Config layering, credential setup, statusline install
+├── install.sh              # Host/VPS installer (Claude Code + MCP + config)
+├── ai-agent.sh             # Bash launcher (add to PATH)
+├── ai-agent.ps1            # PowerShell launcher (Windows)
+├── claude-config/
+│   ├── CLAUDE.md           # Default system instructions
+│   ├── settings.json       # MCP servers, permissions, hooks, statusline
+│   ├── statusline.sh       # Two-line Claude Code statusline script
+│   └── setup.sh            # Dev tool installer (ripgrep, uv, cargo tools, etc.)
+├── .env.example            # Template — all keys
+├── .env.claude             # Preset — Claude only
+├── .env.full               # Preset — all providers
+└── .env.browsing           # Preset — browsing + search
 ```
 
-### 3. Use AI Tools
+---
 
-The container starts in `/workspace`, which is mapped to your current directory:
-
-```bash
-# You're now inside the container!
-root@container:/workspace#
-
-# All your project files are here
-ls -la
-
-# Use any AI tool
-claude-code "help me understand this codebase"
-aider main.py
-sgpt "create a git command to show files changed in last week"
-gemini "explain this function"
-gh copilot suggest "run tests and show coverage"
-```
-
-### 4. Exit When Done
-
-```bash
-exit
-```
-
-You're back in your host terminal, all file changes are preserved in your project directory.
-
-## Usage Examples
+## Usage
 
 ### Claude Code
 
 ```bash
-# Interactive session
-claude-code
-
-# Direct commands
-claude-code "refactor this function to use async/await"
-claude-code "add error handling to app.js"
-claude-code "explain what this code does"
+claude                              # interactive session
+claude "explain this codebase"
+claude "add error handling to app.js"
+claude "refactor to use async/await"
 ```
 
-### Aider - AI Pair Programming
+### Aider
 
 ```bash
-# Start with Claude
-aider
-
-# Use GPT-4
-aider --model gpt-4
-
-# Use Gemini
+aider                               # uses Claude by default
+aider --model gpt-4o src/app.js
 aider --model gemini/gemini-pro
-
-# Work on specific files
-aider src/app.js src/utils.js
-
-# Auto-commit changes
-aider --auto-commits
-
-# Ask Aider to implement a feature
-aider
-> Add user authentication with JWT tokens
 ```
 
-### Shell-GPT (sgpt)
+### Shell-GPT
 
 ```bash
-# Ask questions
-sgpt "how do I find all large files in current directory"
-
-# Generate shell commands
+sgpt "how do I find large files"
 sgpt --shell "find files modified in last 7 days"
-
-# Execute commands directly (with confirmation)
 sgpt --shell --execute "create a backup of all .js files"
-
-# Code generation
-sgpt --code "python function to parse JSON and extract email addresses"
+sgpt --code "python function to parse JSON"
 ```
 
-### Gemini Pro CLI
+### Fabric
 
 ```bash
-# Ask questions
-gemini "explain how async/await works in JavaScript"
-
-# Code review
-gemini "review this code: $(cat app.js)"
-
-# Generate code
-gemini "create a Python function to validate email addresses"
-```
-
-### GitHub Copilot CLI
-
-First-time setup (run once inside container):
-```bash
-gh auth login
-gh extension install github/gh-copilot
-```
-
-Then use:
-```bash
-# Get command suggestions
-gh copilot suggest "install dependencies and start dev server"
-
-# Explain a command
-gh copilot explain "docker run -it -v $(pwd):/app node:22"
-```
-
-### Fabric - AI Patterns
-
-First-time setup (run once inside container):
-```bash
-fabric --setup
-```
-
-Then use:
-```bash
-# List available patterns
-fabric --list
-
-# Extract wisdom from content
+fabric --setup                      # first-time setup
+fabric --list                       # show available patterns
 cat article.md | fabric --pattern extract_wisdom
-
-# Summarize
-cat documentation.md | fabric --pattern summarize
-
-# Create content
-fabric --pattern create_essay "write about microservices"
+cat docs.md | fabric --pattern summarize
 ```
 
-## Advanced Usage
-
-### Pass Arguments to Container
-
-You can pass commands to run inside the container:
+### Pass a command directly (Docker)
 
 ```bash
-# Run a specific command
-ai-agent bash -c "claude-code 'explain main.py' && exit"
-
-# Run and exit immediately
-ai-agent sgpt "summarize this project"
+ai-agent bash -c "claude 'summarize main.py'"
+ai-agent --env ~/.config/ai-agent/.env.client bash
 ```
 
-### Multiple Terminal Sessions
-
-You can run multiple containers for the same project:
+### Start a named container manually
 
 ```bash
-# Terminal 1
-cd ~/projects/my-app
-ai-agent
+# Interactive shell with a named container (removed on exit)
+docker run -it --rm --name my-session -v $(pwd):/workspace ai-agent:latest
 
-# Terminal 2 (same project)
-cd ~/projects/my-app
-ai-agent
+# Attach to a running named container from another terminal
+docker exec -it my-session bash
+
+# Keep running in the background, attach later
+docker run -d --name my-session -v $(pwd):/workspace ai-agent:latest sleep infinity
+docker exec -it my-session bash
 ```
 
-Each gets its own container instance, but they share the same project files.
+---
 
-### Different Projects Simultaneously
+## Advanced
+
+### docker-compose
 
 ```bash
-# Terminal 1 - Project A
-cd ~/projects/project-a
-ai-agent
-
-# Terminal 2 - Project B
-cd ~/projects/project-b
-ai-agent
-
-# Terminal 3 - Project C
-cd ~/projects/project-c
-ai-agent
+docker compose up ai-agent          # base variant
+docker compose up ai-agent-browsing # browsing variant
 ```
 
-Each container is isolated but has access to its respective project directory.
+### Multiple simultaneous sessions
 
-### Custom .env Per Project
-
-If you need different API keys for different projects:
+Each `ai-agent` call spawns an independent container sharing the same project files:
 
 ```bash
-# Create project-specific .env
+# Terminal 1 — project A
+cd ~/projects/project-a && ai-agent
+
+# Terminal 2 — project B
+cd ~/projects/project-b && ai-agent
+```
+
+### Per-project .env
+
+```bash
 cd ~/projects/client-project
-cp ~/.config/ai-agent/.env .env.client
-# Edit .env.client with client-specific keys
-
-# Modify the launch script temporarily or create a wrapper
-# Then run with custom env file
+cp ~/.config/ai-agent/.env .env
+# edit .env with project-specific keys
+ai-agent   # picks up .env in current directory automatically
 ```
 
-## Tips & Tricks
+### Override config without rebuilding (Docker)
 
-1. **Create shell aliases** (if script is not in PATH):
-   ```bash
-   # Linux/Mac (~/.bashrc or ~/.zshrc)
-   alias ai='~/path/to/ai-agent.sh'
+Mount your host config directly:
 
-   # Windows (PowerShell $PROFILE)
-   function ai { & C:\path\to\ai-agent.ps1 }
-   ```
+```bash
+# Uncomment in docker-compose.yml:
+# - ~/.claude/CLAUDE.md:/root/.claude/CLAUDE.md.host:ro
+# - ~/.claude/settings.json:/root/.claude/settings.json.host:ro
+```
 
-2. **Quick project setup**:
-   ```bash
-   git clone <repo> && cd <repo> && ai-agent
-   ```
+Or the launcher does this automatically if those files exist on your host.
 
-3. **Combine AI tools**:
-   ```bash
-   # Inside container
-   sgpt --shell "find all TODO comments" | sh
-   aider --yes "implement all TODOs"
-   fabric --pattern create_documentation < main.py > docs/main.md
-   ```
+---
 
-4. **Save container state** (advanced):
-   ```bash
-   # Commit container changes to new image
-   docker commit ai-agent ai-agent:custom
-   # Update script to use ai-agent:custom
-   ```
+## install.sh flags
 
-5. **View running containers**:
-   ```bash
-   docker ps  # See all active AI agent containers
-   ```
+```
+./install.sh              # config + tools + PATH (no Docker)
+./install.sh --docker     # same + build Docker images
+./install.sh --docker-only
+./install.sh --config-only
+./install.sh --path-only
+./install.sh --no-tools
+./install.sh --no-path
+```

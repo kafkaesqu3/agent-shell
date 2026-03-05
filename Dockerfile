@@ -44,9 +44,12 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Claude Code via official installer (npm method is deprecated)
+RUN curl -fsSL https://claude.ai/install.sh | bash
+ENV PATH="/root/.local/bin:${PATH}"
+
 # Install Node.js AI tools
 RUN npm install -g \
-    @anthropic-ai/claude-code \
     @openai/codex \
     openai \
     @google/generative-ai \
