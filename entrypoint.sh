@@ -14,6 +14,7 @@ chown -R agent:agent /home/agent/.claude /home/agent/.config /workspace 2>/dev/n
 
 # --- Config files: always sync from image ---
 cp /opt/claude-config/CLAUDE.md /home/agent/.claude/CLAUDE.md
+cp /opt/claude-config/CLAUDE.*.md /home/agent/.claude/ 2>/dev/null || true
 cp /opt/claude-config/settings.json /home/agent/.claude/settings.json
 if [ -f /opt/claude-config/statusline.sh ]; then
   cp /opt/claude-config/statusline.sh /home/agent/.claude/statusline.sh

@@ -4,6 +4,8 @@ Always use Context7 MCP when I need library/API documentation, code generation, 
 
 Global instructions for all projects. Project-specific CLAUDE.md files override these defaults.
 
+Language-specific standards: see CLAUDE.python.md, CLAUDE.node.md, CLAUDE.rust.md (loaded automatically when those languages are detected in the project).
+
 - Prefer Exa AI (`mcp__exa__web_search_exa`) over `WebSearch` for all web searches
 - Use skills proactively when they match the task -- suggest relevant ones, don't block on them
 
@@ -52,91 +54,11 @@ Evaluate in order: architecture -> code quality -> tests -> performance. Before 
 
 **Mock boundaries, not logic.** Only mock things that are slow, non-deterministic, or external services you don't control.
 
-**Verify tests catch failures.** Use mutation testing (`cargo-mutants`, `mutmut`) and property-based testing (`proptest`, `hypothesis`) where appropriate.
+**Verify tests catch failures.** Use mutation testing and property-based testing where appropriate.
 
 ## Development
 
 When adding dependencies, CI actions, or tool versions, always look up the current stable version.
-
-### Python
-
-**Runtime:** 3.13 with `uv venv`
-
-| purpose | tool |
-|---------|------|
-| deps & venv | `uv` |
-| lint & format | `ruff check` / `ruff format` |
-| static types | `ty check` |
-| tests | `pytest -q` |
-
-Configure `ty` strictness via `[tool.ty.rules]` in pyproject.toml. Use `uv_build` for pure Python, `hatchling` for extensions.
-
-Tests in `tests/` directory mirroring package structure. Pin exact versions (`==` not `>=`), verify hashes with `uv pip install --require-hashes`.
-
-### Node/TypeScript
-
-**Runtime:** Node 22 LTS, ESM only (`"type": "module"`)
-
-| purpose | tool |
-|---------|------|
-| lint | `oxlint` |
-| format | `oxfmt` |
-| test | `vitest` |
-| types | `tsc --noEmit` |
-
-Enable `typescript`, `import`, `unicorn` plugins.
-
-**tsconfig.json strictness:**
-```jsonc
-"strict": true,
-"noUncheckedIndexedAccess": true,
-"exactOptionalPropertyTypes": true,
-"noImplicitOverride": true,
-"noPropertyAccessFromIndexSignature": true,
-"verbatimModuleSyntax": true,
-"isolatedModules": true
-```
-
-Pin exact versions (no `^` or `~`).
-
-### Rust
-
-**Runtime:** Latest stable via `rustup`
-
-| purpose | tool |
-|---------|------|
-| build & deps | `cargo` |
-| lint | `cargo clippy --all-targets --all-features -- -D warnings` |
-| format | `cargo fmt` |
-| test | `cargo test` |
-| supply chain | `cargo deny check` |
-| safety check | `cargo careful test` |
-
-**Style:** Prefer `for` loops over iterator chains. Shadow variables through transformations. No wildcard matches. Use `let...else` for early returns.
-
-**Type design:** Newtypes over primitives. Enums for state machines. `thiserror` for libraries, `anyhow` for applications. `tracing` for logging.
-
-**Cargo.toml lints:**
-```toml
-[lints.clippy]
-pedantic = { level = "warn", priority = -1 }
-unwrap_used = "deny"
-expect_used = "warn"
-panic = "deny"
-panic_in_result_fn = "deny"
-unimplemented = "deny"
-allow_attributes = "deny"
-dbg_macro = "deny"
-todo = "deny"
-print_stdout = "deny"
-print_stderr = "deny"
-await_holding_lock = "deny"
-large_futures = "deny"
-exit = "deny"
-mem_forget = "deny"
-module_name_repetitions = "allow"
-similar_names = "allow"
-```
 
 ### GitHub Actions
 
