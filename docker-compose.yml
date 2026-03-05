@@ -14,15 +14,9 @@ services:
       # Mount current directory to /workspace
       - .:/workspace
       # Persistent Claude Code state (credentials, history, settings)
-      - ai-agent-claude:/root/.claude
+      - ai-agent-claude:/home/agent/.claude
       # Persistent AI tool configurations
-      - ai-agent-config:/root/.config
-      # Optional: Host CLAUDE.md override (uncomment if you have one)
-      # - ~/.claude/CLAUDE.md:/root/.claude/CLAUDE.md.host:ro
-      # Optional: Host settings override (uncomment if you have one)
-      # - ~/.claude/settings.json:/root/.claude/settings.json.host:ro
-      # Optional: Share git config from host
-      # - ~/.gitconfig:/root/.gitconfig:ro
+      - ai-agent-config:/home/agent/.config
     working_dir: /workspace
 
   # Full variant with browser automation
@@ -39,8 +33,8 @@ services:
         required: false
     volumes:
       - .:/workspace
-      - ai-agent-claude:/root/.claude
-      - ai-agent-config:/root/.config
+      - ai-agent-claude:/home/agent/.claude
+      - ai-agent-config:/home/agent/.config
     working_dir: /workspace
 
 volumes:

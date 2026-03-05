@@ -15,15 +15,26 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# Parse --env flag (must be first arg)
+# Parse flags
 ENV_FILE=""
-if [[ "$1" == "--env" && -n "$2" ]]; then
-    ENV_FILE="$2"
-    shift 2
-elif [[ "$1" == --env=* ]]; then
-    ENV_FILE="${1#--env=}"
-    shift
-fi
+CONTAINER_NAME=""
+while true; do
+    if [[ "$1" == "--env" && -n "$2" ]]; then
+        ENV_FILE="$2"
+        shift 2
+    elif [[ "$1" == --env=* ]]; then
+        ENV_FILE="${1#--env=}"
+        shift
+    elif [[ "$1" == "--name" && -n "$2" ]]; then
+        CONTAINER_NAME="$2"
+        shift 2
+    elif [[ "$1" == --name=* ]]; then
+        CONTAINER_NAME="${1#--name=}"
+        shift
+    else
+        break
+    fi
+done
 
 # Resolve .env file: --env flag > .env in current dir > .env in script dir > ~/.config/ai-agent/.env
 if [ -z "$ENV_FILE" ]; then
@@ -49,20 +60,20 @@ fi
 echo -e "${GREEN}Docker is running${NC}"
 
 # Build docker run command
-DOCKER_CMD="docker run -it --rm"
+if [ -n "$CONTAINER_NAME" ]; then
+    DOCKER_CMD="docker run -it --name $CONTAINER_NAME"
+else
+    DOCKER_CMD="docker run -it --rm"
+fi
 
-# Load .env and pass vars
+# Parse .env and pass each var as -e KEY=VAL
 if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
     echo -e "${GREEN}Loading API keys from: $ENV_FILE${NC}"
-    while IFS= read -r line; do
-        if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
-            key=$(echo "$line" | cut -d= -f1)
-            DOCKER_CMD="$DOCKER_CMD -e $key"
-        fi
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" || "$line" == \#* ]] && continue  # skip blanks and comments
+        line="${line#export }"                            # strip optional 'export '
+        [[ "$line" == *=* ]] && DOCKER_CMD="$DOCKER_CMD -e $line"
     done < "$ENV_FILE"
-    set -a
-    source "$ENV_FILE"
-    set +a
 else
     echo -e "${YELLOW}No .env file found${NC}"
     echo "  Searched: .env (current dir), $SCRIPT_DIR/.env, ~/.config/ai-agent/.env"
@@ -79,29 +90,29 @@ echo ""
 DOCKER_CMD="$DOCKER_CMD -v $(pwd):/workspace"
 
 # Volume: persistent Claude state
-DOCKER_CMD="$DOCKER_CMD -v $VOLUME_NAME:/root/.claude"
+DOCKER_CMD="$DOCKER_CMD -v $VOLUME_NAME:/home/agent/.claude"
 
-# Optional: host CLAUDE.md override
+# Optional: host CLAUDE.md override (mounted directly — no processing needed)
 if [ -f "$CLAUDE_HOME/CLAUDE.md" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/CLAUDE.md:/root/.claude/CLAUDE.md.host:ro"
+    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/CLAUDE.md:/home/agent/.claude/CLAUDE.md:ro"
     echo -e "${GREEN}Mounting host CLAUDE.md${NC}"
 fi
 
-# Optional: host settings.json override
+# Optional: host settings.json override (mounted outside the volume for entrypoint processing)
 if [ -f "$CLAUDE_HOME/settings.json" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/settings.json:/root/.claude/settings.json.host:ro"
+    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/settings.json:/opt/host-config/settings.json:ro"
     echo -e "${GREEN}Mounting host settings.json${NC}"
 fi
 
 # Optional: host credentials
 if [ -f "$CLAUDE_HOME/.credentials.json" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/.credentials.json:/root/.claude/.credentials.json:ro"
+    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/.credentials.json:/home/agent/.claude/.credentials.json:ro"
     echo -e "${GREEN}Mounting host credentials${NC}"
 fi
 
 # Optional: git config
 if [ -f "$HOME/.gitconfig" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $HOME/.gitconfig:/root/.gitconfig:ro"
+    DOCKER_CMD="$DOCKER_CMD -v $HOME/.gitconfig:/home/agent/.gitconfig:ro"
 fi
 
 DOCKER_CMD="$DOCKER_CMD -w /workspace"

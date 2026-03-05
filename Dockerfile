@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gnupg \
     python3 \
     python3-venv \
+    sudo \
     vim \
     jq \
     iputils-ping \
@@ -32,7 +33,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 RUN curl -fsSL https://go.dev/dl/go1.23.5.linux-amd64.tar.gz -o go.tar.gz \
     && tar -C /usr/local -xzf go.tar.gz \
     && rm go.tar.gz
-ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
+ENV GOPATH=/usr/local
+ENV PATH="/usr/local/go/bin:${PATH}"
 
 # Install GitHub CLI
 RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
@@ -45,8 +47,8 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code via official installer (npm method is deprecated)
-RUN curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/root/.local/bin:${PATH}"
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && cp /root/.local/bin/claude /usr/local/bin/claude
 
 # Install Node.js AI tools
 RUN npm install -g \
@@ -81,21 +83,32 @@ RUN pip install --no-cache-dir \
 # Install Fabric (AI patterns framework)
 RUN go install github.com/danielmiessler/fabric/cmd/fabric@latest
 
+# Install gopls (required by gopls-lsp Claude plugin)
+RUN go install golang.org/x/tools/gopls@latest
+
 # Set up environment
 ENV SHELL=/bin/bash
 
-# Create config directories
-RUN mkdir -p /root/.claude \
-    && mkdir -p /root/.config/claude \
-    && mkdir -p /root/.config/fabric \
-    && mkdir -p /root/.config/gemini \
-    && mkdir -p /root/.aider
+# Create non-root user with passwordless sudo
+RUN useradd -m -s /bin/bash agent \
+    && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
+    && chmod 0440 /etc/sudoers.d/agent
+
+# Create config directories owned by agent
+RUN mkdir -p /home/agent/.claude \
+    && mkdir -p /home/agent/.config/claude \
+    && mkdir -p /home/agent/.config/fabric \
+    && mkdir -p /home/agent/.config/gemini \
+    && mkdir -p /home/agent/.aider \
+    && mkdir -p /workspace \
+    && chown -R agent:agent /home/agent /workspace
 
 # Copy config files and entrypoint
 COPY claude-config/ /opt/claude-config/
 COPY entrypoint.sh /opt/entrypoint.sh
 RUN chmod +x /opt/entrypoint.sh
 
+USER agent
 WORKDIR /workspace
 
 ENTRYPOINT ["/opt/entrypoint.sh"]
@@ -105,6 +118,8 @@ CMD ["bash"]
 # Stage 2: browsing
 ###############################################################################
 FROM base AS browsing
+
+USER root
 
 # Install browser packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -126,3 +141,5 @@ RUN pip install --no-cache-dir \
 RUN npx playwright install --with-deps chromium
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
+USER agent

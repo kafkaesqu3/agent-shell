@@ -81,13 +81,13 @@ $DockerArgs += "${CurrentDir}:/workspace"
 
 # Volume: persistent Claude state
 $DockerArgs += "-v"
-$DockerArgs += "${VolumeName}:/root/.claude"
+$DockerArgs += "${VolumeName}:/home/agent/.claude"
 
 # Optional: host CLAUDE.md override
 $ClaudeMd = Join-Path $ClaudeHome "CLAUDE.md"
 if (Test-Path $ClaudeMd) {
     $DockerArgs += "-v"
-    $DockerArgs += "${ClaudeMd}:/root/.claude/CLAUDE.md.host:ro"
+    $DockerArgs += "${ClaudeMd}:/home/agent/.claude/CLAUDE.md.host:ro"
     Write-Host "Mounting host CLAUDE.md" -ForegroundColor Green
 }
 
@@ -95,7 +95,7 @@ if (Test-Path $ClaudeMd) {
 $ClaudeSettings = Join-Path $ClaudeHome "settings.json"
 if (Test-Path $ClaudeSettings) {
     $DockerArgs += "-v"
-    $DockerArgs += "${ClaudeSettings}:/root/.claude/settings.json.host:ro"
+    $DockerArgs += "${ClaudeSettings}:/home/agent/.claude/settings.json.host:ro"
     Write-Host "Mounting host settings.json" -ForegroundColor Green
 }
 
@@ -103,7 +103,7 @@ if (Test-Path $ClaudeSettings) {
 $ClaudeCreds = Join-Path $ClaudeHome ".credentials.json"
 if (Test-Path $ClaudeCreds) {
     $DockerArgs += "-v"
-    $DockerArgs += "${ClaudeCreds}:/root/.claude/.credentials.json:ro"
+    $DockerArgs += "${ClaudeCreds}:/home/agent/.claude/.credentials.json:ro"
     Write-Host "Mounting host credentials" -ForegroundColor Green
 }
 
