@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     gnupg \
+    gosu \
     python3 \
     python3-venv \
     sudo \
@@ -108,7 +109,6 @@ COPY claude-config/ /opt/claude-config/
 COPY entrypoint.sh /opt/entrypoint.sh
 RUN chmod +x /opt/entrypoint.sh
 
-USER agent
 WORKDIR /workspace
 
 ENTRYPOINT ["/opt/entrypoint.sh"]
@@ -141,5 +141,3 @@ RUN pip install --no-cache-dir \
 RUN npx playwright install --with-deps chromium
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
-USER agent

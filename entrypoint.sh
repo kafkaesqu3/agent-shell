@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Entrypoint runs as root so it can fix volume ownership before dropping to
+# the agent user. Named volumes are initialised owned by root; without this
+# chown the agent user cannot write config files into the mounted directory.
+
+# --- Fix volume ownership (volume may be root-owned on first run) ---
+chown -R agent:agent /home/agent/.claude /home/agent/.config /workspace 2>/dev/null || true
+
 # Config files are always overwritten from the baked image so that rebuilding
 # the image is sufficient to pick up changes from claude-config/ in the repo.
 # Only credentials and session state (history, projects) are preserved.
@@ -11,6 +18,19 @@ cp /opt/claude-config/settings.json /home/agent/.claude/settings.json
 if [ -f /opt/claude-config/statusline.sh ]; then
   cp /opt/claude-config/statusline.sh /home/agent/.claude/statusline.sh
   chmod +x /home/agent/.claude/statusline.sh
+fi
+
+# --- Copy slash commands ---
+if [ -d /opt/claude-config/commands ]; then
+  mkdir -p /home/agent/.claude/commands
+  cp /opt/claude-config/commands/*.md /home/agent/.claude/commands/
+fi
+
+# --- Copy hook scripts ---
+if [ -d /opt/claude-config/hooks ]; then
+  mkdir -p /home/agent/.claude/hooks
+  cp /opt/claude-config/hooks/*.sh /home/agent/.claude/hooks/
+  chmod +x /home/agent/.claude/hooks/*.sh
 fi
 
 # --- Patch MCP env var placeholders in settings.json ---
@@ -43,5 +63,5 @@ fi
 # --- Lock down permissions on .claude directory ---
 chmod -R 700 /home/agent/.claude 2>/dev/null || true
 
-# --- Hand off to the requested command ---
-exec "$@"
+# --- Drop to agent user and hand off to the requested command ---
+exec gosu agent "$@"
