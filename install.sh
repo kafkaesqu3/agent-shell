@@ -75,9 +75,19 @@ if [ "$DO_CONFIG" = true ]; then
   HOST_SETTINGS="$CLAUDE_HOME/settings.json"
 
   if [ -f "$HOST_SETTINGS" ]; then
-    info "Merging MCP servers into existing $HOST_SETTINGS"
-    jq -s '.[0] * { mcpServers: (.[0].mcpServers // {}) * .[1].mcpServers }' \
-      "$HOST_SETTINGS" "$REPO_SETTINGS" > /tmp/claude-settings-merged.json
+    info "Merging repo settings into existing $HOST_SETTINGS"
+    # Repo is the base; preserve user-specific overrides: model, plugins, UI prefs, attribution.
+    # For mcpServers, repo provides the schema but host values win — preserves already-substituted
+    # tokens on re-runs so __PLACEHOLDER__ strings never overwrite real tokens.
+    jq -s '
+      .[1] * {
+        mcpServers: (.[1].mcpServers * (.[0].mcpServers // {})),
+        model:                 (.[0].model // .[1].model),
+        enabledPlugins:        (.[0].enabledPlugins // {}),
+        clearTerminalOnLaunch: (.[0].clearTerminalOnLaunch // .[1].clearTerminalOnLaunch),
+        attribution:           (.[0].attribution // .[1].attribution)
+      }
+    ' "$HOST_SETTINGS" "$REPO_SETTINGS" > /tmp/claude-settings-merged.json
 
     MERGED=/tmp/claude-settings-merged.json
     [ -n "${GITHUB_TOKEN:-}" ] && sed -i "s|__GITHUB_TOKEN__|${GITHUB_TOKEN}|g" "$MERGED"
@@ -85,7 +95,7 @@ if [ "$DO_CONFIG" = true ]; then
 
     cp "$HOST_SETTINGS" "${HOST_SETTINGS}.bak"
     mv "$MERGED" "$HOST_SETTINGS"
-    ok "MCP servers merged (backup at settings.json.bak)"
+    ok "Settings merged (backup at settings.json.bak)"
   else
     info "No existing settings.json — copying from repo"
     cp "$REPO_SETTINGS" "$HOST_SETTINGS"
@@ -103,9 +113,11 @@ if [ "$DO_CONFIG" = true ]; then
     if grep -qF "$MARKER" "$HOST_CLAUDE_MD" 2>/dev/null; then
       ok "CLAUDE.md already contains repo instructions"
     else
-      info "Appending repo CLAUDE.md instructions to existing file"
-      { echo ""; echo "# --- AI Agent Shell defaults ---"; cat "$REPO_CLAUDE_MD"; } >> "$HOST_CLAUDE_MD"
-      ok "CLAUDE.md updated"
+      # Host CLAUDE.md predates this repo — replace with repo version (superset)
+      info "Replacing CLAUDE.md with repo version (backup at CLAUDE.md.bak)"
+      cp "$HOST_CLAUDE_MD" "${HOST_CLAUDE_MD}.bak"
+      cp "$REPO_CLAUDE_MD" "$HOST_CLAUDE_MD"
+      ok "CLAUDE.md replaced"
     fi
   else
     cp "$REPO_CLAUDE_MD" "$HOST_CLAUDE_MD"
@@ -131,25 +143,32 @@ fi
 if [ "$DO_TOOLS" = true ]; then
   echo -e "${BOLD}--- Installing Tools ---${NC}"
 
-  # Node.js — required for Claude Code and all npm MCP servers
-  if ! command -v node &>/dev/null; then
-    warn "Node.js not found — attempting install..."
-    if command -v apt-get &>/dev/null; then
-      curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-      sudo apt-get install -y nodejs
-    elif command -v brew &>/dev/null; then
-      brew install node@22
-    else
-      err "Cannot auto-install Node.js. Install Node.js 18+ manually then re-run."
-      exit 1
-    fi
+  # nvm + Node.js — required for Claude Code and all npm MCP servers
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+    info "Installing nvm..."
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+    # shellcheck source=/dev/null
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    ok "nvm installed"
+  else
+    # shellcheck source=/dev/null
+    \. "$NVM_DIR/nvm.sh"
+    ok "nvm already installed ($(nvm --version))"
   fi
+
+  if ! nvm ls 22 &>/dev/null; then
+    info "Installing Node.js 22 via nvm..."
+    nvm install 22
+  fi
+  nvm use 22
+  nvm alias default 22
   ok "Node.js $(node --version)"
 
-  # Claude Code
+  # Claude Code (official installer — npm method is deprecated)
   info "Installing Claude Code..."
-  npm install -g @anthropic-ai/claude-code 2>&1 | tail -2
-  ok "Claude Code $(claude --version 2>/dev/null)"
+  curl -fsSL https://claude.ai/install.sh | bash 2>&1 | tail -3
+  ok "Claude Code installed"
 
   # MCP servers (npm)
   info "Installing MCP servers (npm)..."
@@ -233,6 +252,30 @@ if [ "$DO_PATH" = true ]; then
   ln -sf "$SCRIPT_DIR/ai-agent.sh" "$LOCAL_BIN/ai-agent"
   ok "Symlinked ai-agent → $LOCAL_BIN/ai-agent"
 
+  # --- claude wrapper: route to container by default, --host for local ---
+  chmod +x "$SCRIPT_DIR/claude-wrapper.sh"
+  REAL_CLAUDE="$(command -v claude 2>/dev/null || true)"
+  if [ -n "$REAL_CLAUDE" ]; then
+    if grep -q "claude-host" "$REAL_CLAUDE" 2>/dev/null; then
+      # Already our wrapper — update it in place
+      cp "$SCRIPT_DIR/claude-wrapper.sh" "$REAL_CLAUDE"
+      ok "claude wrapper updated"
+    else
+      # First install: save real binary as claude-host, install wrapper as claude
+      CLAUDE_DIR="$(dirname "$REAL_CLAUDE")"
+      cp "$REAL_CLAUDE" "$CLAUDE_DIR/claude-host"
+      chmod +x "$CLAUDE_DIR/claude-host"
+      cp "$SCRIPT_DIR/claude-wrapper.sh" "$REAL_CLAUDE"
+      chmod +x "$REAL_CLAUDE"
+      ok "claude wrapper installed (original binary → claude-host)"
+    fi
+  else
+    # claude not yet installed — place wrapper now, claude-host resolved later
+    cp "$SCRIPT_DIR/claude-wrapper.sh" "$LOCAL_BIN/claude"
+    chmod +x "$LOCAL_BIN/claude"
+    warn "claude not found — wrapper installed at $LOCAL_BIN/claude (install claude first, then re-run)"
+  fi
+
   if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
     { echo ""; echo "# AI Agent Shell — added by install.sh"; echo "export PATH=\"\$HOME/.local/bin:\$PATH\""; } >> "$PROFILE"
     ok "PATH updated in $PROFILE (run: source $PROFILE)"
@@ -246,6 +289,50 @@ if [ "$DO_PATH" = true ]; then
     info "Copied .env template → $CONFIG_DIR/.env (edit with your API keys)"
   fi
 
+  # --- Print shell snippets for manual addition ---
+  echo ""
+  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "${BOLD}Shell config changes required${NC}"
+  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+  echo -e "${BOLD}1. ${BLUE}~/.zshrc${NC} or ${BLUE}~/.bashrc${NC}"
+  echo -e "   ${YELLOW}Add these lines if not already present:${NC}"
+  echo ""
+  cat << 'SHELLFUNC'
+# nvm
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+# claude: runs in Docker by default; use --host to run directly on this machine
+claude() {
+  if [[ "${1:-}" == "--host" ]]; then
+    shift
+    command claude-host "$@"
+  else
+    ai-agent claude "$@"
+  fi
+}
+SHELLFUNC
+
+  echo ""
+  echo -e "${BOLD}2. ${BLUE}PowerShell profile${NC} (Documents/PowerShell/Microsoft.PowerShell_profile.ps1)"
+  echo -e "   ${YELLOW}For Windows users calling claude from PowerShell via WSL:${NC}"
+  echo ""
+  cat << 'PSFUNC'
+# claude: runs in Docker by default; use --host to run directly on WSL
+function claude {
+  if ($args.Count -gt 0 -and $args[0] -eq "--host") {
+    $rest = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
+    wsl claude --host @rest
+  } else {
+    wsl ai-agent claude @args
+  }
+}
+PSFUNC
+
+  echo ""
+  echo -e "  ${YELLOW}Tip:${NC} 'claude' launches in Docker (isolated, reproducible)."
+  echo -e "        'claude --host' runs the local binary directly on this machine."
   echo ""
 fi
 

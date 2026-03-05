@@ -2,6 +2,31 @@
 
 A portable AI development environment — either as a Docker container you launch in any project directory, or installed directly on a host/VPS. Bundles Claude Code with MCP servers, multiple AI tools, and best-practices configuration.
 
+## Quickstart
+
+```bash
+git clone <this-repo> ~/ai-agent-shell
+cd ~/ai-agent-shell
+
+# Copy and fill in your API keys
+cp .env.example ~/.config/ai-agent/.env
+# edit ~/.config/ai-agent/.env
+
+# Install config, tools, and PATH setup
+./install.sh
+
+# Paste the shell snippets printed by install.sh into ~/.zshrc or ~/.bashrc
+# (includes nvm init + claude wrapper function)
+source ~/.zshrc   # or ~/.bashrc
+
+# Done — run claude from any project
+cd ~/projects/my-app
+claude            # runs Claude Code inside Docker
+claude --host     # runs Claude Code locally on the host
+```
+
+**Windows (PowerShell):** paste the function printed by `install.sh` into your PowerShell profile, then use `claude` or `ai-agent.ps1` directly.
+
 ## What's Included
 
 ### AI Assistants
@@ -52,7 +77,7 @@ cd ~/ai-agent-shell
 ```
 
 This installs:
-- Node.js 22 (auto-installs via nodesource if missing)
+- Node.js 22 via nvm (installs nvm if missing)
 - `claude` CLI
 - All npm MCP servers globally
 - `mcp-server-fetch` in an isolated Python venv → symlinked to `~/.local/bin`
@@ -147,7 +172,9 @@ GOOGLE_API_KEY=...        # optional
 
 ```bash
 cd ~/projects/my-app
-ai-agent          # launches container with current dir mounted at /workspace
+claude            # runs Claude Code inside the Docker container
+claude --host     # runs Claude Code directly on the host (bypasses Docker)
+ai-agent          # launches an interactive shell in the container
 ```
 
 The launcher auto-detects `.env` from:
@@ -156,25 +183,25 @@ The launcher auto-detects `.env` from:
 3. `.env` in the script directory
 4. `~/.config/ai-agent/.env`
 
-If your host has `~/.claude/CLAUDE.md` or `~/.claude/settings.json`, they are mounted into the container as overrides — your local config takes priority over the baked defaults.
-
 ---
 
 ## Configuration Layering
 
-Both install modes use the same layered config strategy:
+Config files are baked into the Docker image from `claude-config/` and always written to the container on startup — so rebuilding the image is all you need to pick up changes. Credentials and session history persist in a named volume across restarts.
 
 ```
-/opt/claude-config/     ← baked defaults (CLAUDE.md, settings.json, statusline.sh)
+claude-config/          ← source of truth (edit here, then rebuild)
         ↓
-~/.claude/*.host        ← host mounts (Docker) or existing files (host install)
+docker build            ← bakes into /opt/claude-config/ inside image
         ↓
-entrypoint.sh patches   ← replaces __GITHUB_TOKEN__ / __BRAVE_API_KEY__ placeholders
+entrypoint.sh           ← writes to /home/agent/.claude/ on every start
+                           patches __GITHUB_TOKEN__ / __BRAVE_API_KEY__ from env
+                           skips .credentials.json if already present
         ↓
-Claude Code starts with merged config
+ai-agent-claude volume  ← persists credentials + session history across restarts
 ```
 
-In Docker, baked defaults apply on first run. Once the `ai-agent-claude` volume has a `settings.json`, it persists across containers. Mounting your host `~/.claude/settings.json` as `.host` overrides the baked version on every launch.
+To update config: edit `claude-config/`, rebuild (`docker build` or `./install.sh --docker`), restart.
 
 ---
 
@@ -188,6 +215,7 @@ agent-shell/
 ├── install.sh              # Host/VPS installer (Claude Code + MCP + config)
 ├── ai-agent.sh             # Bash launcher (add to PATH)
 ├── ai-agent.ps1            # PowerShell launcher (Windows)
+├── claude-wrapper.sh       # claude → container, claude --host → local
 ├── claude-config/
 │   ├── CLAUDE.md           # Default system instructions
 │   ├── settings.json       # MCP servers, permissions, hooks, statusline
@@ -291,17 +319,14 @@ cp ~/.config/ai-agent/.env .env
 ai-agent   # picks up .env in current directory automatically
 ```
 
-### Override config without rebuilding (Docker)
+### Updating config (Docker)
 
-Mount your host config directly:
+Edit files in `claude-config/`, then rebuild and restart:
 
 ```bash
-# Uncomment in docker-compose.yml:
-# - ~/.claude/CLAUDE.md:/root/.claude/CLAUDE.md.host:ro
-# - ~/.claude/settings.json:/root/.claude/settings.json.host:ro
+docker build -t ai-agent:latest --target base .
+ai-agent   # entrypoint writes fresh config on every start
 ```
-
-Or the launcher does this automatically if those files exist on your host.
 
 ---
 
