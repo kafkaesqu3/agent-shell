@@ -1,18 +1,20 @@
 ###############################################################################
 # Stage 1: base
 ###############################################################################
-FROM node:22-slim AS base
+FROM ubuntu:24.04 AS base
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies + Python (built into Ubuntu 24.04)
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     git \
     curl \
     wget \
-    python3 \
-    python3-pip \
-    python3-venv \
     ca-certificates \
+    gnupg \
+    python3 \
+    python3-venv \
     vim \
     jq \
     iputils-ping \
@@ -21,16 +23,23 @@ RUN apt-get update && apt-get install -y \
     net-tools \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Node.js 22 LTS via nodesource
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Go 1.23.5
 RUN curl -fsSL https://go.dev/dl/go1.23.5.linux-amd64.tar.gz -o go.tar.gz \
     && tar -C /usr/local -xzf go.tar.gz \
     && rm go.tar.gz
-ENV PATH="/usr/local/go/bin:${PATH}"
+ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
 
 # Install GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
     && apt-get update \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
@@ -52,8 +61,12 @@ RUN npm install -g \
     @modelcontextprotocol/server-sequential-thinking \
     @upstash/context7-mcp
 
-# Install Python AI tools
-RUN pip3 install --no-cache-dir --break-system-packages \
+# Install Python AI tools in a venv (avoids conflict with Ubuntu's system pip)
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:${PATH}"
+
+RUN pip install --no-cache-dir \
     aider-chat \
     shell-gpt \
     openai \
@@ -66,7 +79,6 @@ RUN pip3 install --no-cache-dir --break-system-packages \
 RUN go install github.com/danielmiessler/fabric/cmd/fabric@latest
 
 # Set up environment
-ENV PATH="/root/go/bin:${PATH}"
 ENV SHELL=/bin/bash
 
 # Create config directories
@@ -92,9 +104,9 @@ CMD ["bash"]
 FROM base AS browsing
 
 # Install browser packages
-RUN apt-get update && apt-get install -y \
-    chromium \
-    chromium-driver \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium-browser \
+    chromium-chromedriver \
     && rm -rf /var/lib/apt/lists/*
 
 # Install browser MCP servers
@@ -102,12 +114,12 @@ RUN npm install -g \
     @modelcontextprotocol/server-puppeteer \
     @playwright/mcp
 
-# Install Python browser deps
-RUN pip3 install --no-cache-dir --break-system-packages \
+# Install Python browser deps (venv inherited from base)
+RUN pip install --no-cache-dir \
     playwright \
     beautifulsoup4
 
 # Install Playwright browsers
 RUN npx playwright install --with-deps chromium
 
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser

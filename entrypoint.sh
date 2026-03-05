@@ -36,6 +36,19 @@ EOF
   chmod 600 /root/.claude/.credentials.json
 fi
 
+# --- Install statusline if available ---
+if [ -f /opt/claude-config/statusline.sh ] && [ ! -f /root/.claude/statusline.sh ]; then
+  cp /opt/claude-config/statusline.sh /root/.claude/statusline.sh
+  chmod +x /root/.claude/statusline.sh
+fi
+
+# --- Conditionally strip browser MCP servers if not in browsing image ---
+if ! command -v chromium &>/dev/null && [ -f /root/.claude/settings.json ]; then
+  # Remove puppeteer and playwright entries since browser isn't available
+  jq 'del(.mcpServers.puppeteer, .mcpServers.playwright)' /root/.claude/settings.json > /tmp/settings.json.tmp \
+    && mv /tmp/settings.json.tmp /root/.claude/settings.json 2>/dev/null || true
+fi
+
 # --- Lock down permissions on .claude directory ---
 chmod -R 700 /root/.claude 2>/dev/null || true
 
