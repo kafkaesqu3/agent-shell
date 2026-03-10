@@ -87,6 +87,7 @@ if [ "$DO_CONFIG" = true ]; then
         clearTerminalOnLaunch: (.[0].clearTerminalOnLaunch // .[1].clearTerminalOnLaunch),
         attribution:           (.[0].attribution // .[1].attribution)
       }
+      | if .model == null then del(.model) else . end
     ' "$HOST_SETTINGS" "$REPO_SETTINGS" > /tmp/claude-settings-merged.json
 
     MERGED=/tmp/claude-settings-merged.json
