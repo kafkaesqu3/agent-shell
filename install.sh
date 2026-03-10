@@ -312,12 +312,16 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
 # claude: runs in Docker by default; use --host to run directly on this machine
+#         use --yolo to enable --dangerously-skip-permissions
 claude() {
-  if [[ "${1:-}" == "--host" ]]; then
-    shift
-    command claude-host "$@"
+  local -a _args=()
+  for _arg in "$@"; do
+    [[ "$_arg" == "--yolo" ]] && _args+=("--dangerously-skip-permissions") || _args+=("$_arg")
+  done
+  if [[ "${_args[0]:-}" == "--host" ]]; then
+    command claude-host "${_args[@]:1}"
   else
-    ai-agent claude "$@"
+    ai-agent claude "${_args[@]+"${_args[@]}"}"
   fi
 }
 SHELLFUNC
@@ -328,12 +332,14 @@ SHELLFUNC
   echo ""
   cat << 'PSFUNC'
 # claude: runs in Docker by default; use --host to run directly on WSL
+#         use --yolo to enable --dangerously-skip-permissions
 function claude {
-  if ($args.Count -gt 0 -and $args[0] -eq "--host") {
-    $rest = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
+  $mapped = @($args | ForEach-Object { if ($_ -eq '--yolo') { '--dangerously-skip-permissions' } else { $_ } })
+  if ($mapped.Count -gt 0 -and $mapped[0] -eq "--host") {
+    $rest = if ($mapped.Count -gt 1) { $mapped[1..($mapped.Count - 1)] } else { @() }
     wsl claude --host @rest
   } else {
-    wsl ai-agent claude @args
+    wsl ai-agent claude @mapped
   }
 }
 PSFUNC
@@ -341,6 +347,7 @@ PSFUNC
   echo ""
   echo -e "  ${YELLOW}Tip:${NC} 'claude' launches in Docker (isolated, reproducible)."
   echo -e "        'claude --host' runs the local binary directly on this machine."
+  echo -e "        'claude --yolo' enables --dangerously-skip-permissions (works with both)."
   echo ""
 fi
 
