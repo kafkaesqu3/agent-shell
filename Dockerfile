@@ -63,7 +63,7 @@ RUN npm install -g \
     @modelcontextprotocol/server-filesystem \
     @modelcontextprotocol/server-github \
     mcp-server-sqlite-npx \
-    @modelcontextprotocol/server-brave-search \
+    brave-search-mcp \
     @modelcontextprotocol/server-sequential-thinking \
     @upstash/context7-mcp
 

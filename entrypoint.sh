@@ -35,11 +35,10 @@ if [ -d /opt/claude-config/hooks ]; then
 fi
 
 # --- Patch MCP env var placeholders in settings.json ---
-if [ -n "$GITHUB_TOKEN" ]; then
-  sed -i "s|__GITHUB_TOKEN__|${GITHUB_TOKEN}|g" /home/agent/.claude/settings.json
-fi
-if [ -n "$BRAVE_API_KEY" ]; then
-  sed -i "s|__BRAVE_API_KEY__|${BRAVE_API_KEY}|g" /home/agent/.claude/settings.json
+# Only needed for values embedded in URLs/strings (not MCP server env blocks,
+# which inherit the container environment directly).
+if [ -n "$BRIGHTDATA_API_KEY" ]; then
+  sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" /home/agent/.claude/settings.json
 fi
 
 # --- Write credentials file if token provided and file missing ---

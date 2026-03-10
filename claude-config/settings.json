@@ -19,7 +19,6 @@
     "frontend-design@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
-    "greptile@claude-plugins-official": true,
     "gopls-lsp@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
@@ -153,10 +152,7 @@
     },
     "github": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-github"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "__GITHUB_TOKEN__"
-      }
+      "args": ["-y", "@modelcontextprotocol/server-github"]
     },
     "sqlite": {
       "command": "npx",
@@ -172,10 +168,11 @@
     },
     "brave-search": {
       "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
-      "env": {
-        "BRAVE_API_KEY": "__BRAVE_API_KEY__"
-      }
+      "args": ["-y", "brave-search-mcp"]
+    },
+    "brightdata": {
+      "type": "sse",
+      "url": "https://mcp.brightdata.com/sse?token=__BRIGHTDATA_API_KEY__"
     },
     "puppeteer": {
       "command": "npx",

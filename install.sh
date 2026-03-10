@@ -90,8 +90,7 @@ if [ "$DO_CONFIG" = true ]; then
     ' "$HOST_SETTINGS" "$REPO_SETTINGS" > /tmp/claude-settings-merged.json
 
     MERGED=/tmp/claude-settings-merged.json
-    [ -n "${GITHUB_TOKEN:-}" ] && sed -i "s|__GITHUB_TOKEN__|${GITHUB_TOKEN}|g" "$MERGED"
-    [ -n "${BRAVE_API_KEY:-}" ] && sed -i "s|__BRAVE_API_KEY__|${BRAVE_API_KEY}|g" "$MERGED"
+    [ -n "${BRIGHTDATA_API_KEY:-}" ] && sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$MERGED"
 
     cp "$HOST_SETTINGS" "${HOST_SETTINGS}.bak"
     mv "$MERGED" "$HOST_SETTINGS"
@@ -99,8 +98,7 @@ if [ "$DO_CONFIG" = true ]; then
   else
     info "No existing settings.json — copying from repo"
     cp "$REPO_SETTINGS" "$HOST_SETTINGS"
-    [ -n "${GITHUB_TOKEN:-}" ] && sed -i "s|__GITHUB_TOKEN__|${GITHUB_TOKEN}|g" "$HOST_SETTINGS"
-    [ -n "${BRAVE_API_KEY:-}" ] && sed -i "s|__BRAVE_API_KEY__|${BRAVE_API_KEY}|g" "$HOST_SETTINGS"
+    [ -n "${BRIGHTDATA_API_KEY:-}" ] && sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$HOST_SETTINGS"
     ok "settings.json installed"
   fi
 
@@ -176,7 +174,7 @@ if [ "$DO_TOOLS" = true ]; then
     @modelcontextprotocol/server-filesystem \
     @modelcontextprotocol/server-github \
     mcp-server-sqlite-npx \
-    @modelcontextprotocol/server-brave-search \
+    brave-search-mcp \
     @modelcontextprotocol/server-sequential-thinking \
     @upstash/context7-mcp \
     @modelcontextprotocol/server-puppeteer \
@@ -348,7 +346,7 @@ echo -e "${NC}"
 echo "Next steps:"
 if [ "$DO_CONFIG" = true ]; then
   echo -e "  ${BLUE}•${NC} Review ~/.claude/settings.json"
-  echo -e "    Replace __GITHUB_TOKEN__ and __BRAVE_API_KEY__ if not set as env vars"
+  echo -e "    Set BRIGHTDATA_API_KEY env var (used in BrightData SSE URL)"
 fi
 if [ "$DO_TOOLS" = true ]; then
   echo -e "  ${BLUE}•${NC} Run 'claude' to authenticate (claude.ai account or ANTHROPIC_API_KEY)"
