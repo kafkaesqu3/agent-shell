@@ -253,6 +253,15 @@ if [ "$DO_PATH" = true ]; then
   # --- claude wrapper: route to container by default, --host for local ---
   chmod +x "$SCRIPT_DIR/claude-wrapper.sh"
   REAL_CLAUDE="$(command -v claude 2>/dev/null || true)"
+  # If not in PATH yet (e.g. just installed in this session), check known locations
+  if [ -z "$REAL_CLAUDE" ]; then
+    for _try in "$HOME/.claude/local/claude" "$HOME/.local/bin/claude" "/usr/local/bin/claude"; do
+      if [ -x "$_try" ]; then
+        REAL_CLAUDE="$_try"
+        break
+      fi
+    done
+  fi
   if [ -n "$REAL_CLAUDE" ]; then
     if grep -q "claude-host" "$REAL_CLAUDE" 2>/dev/null; then
       # Already our wrapper — update it in place
