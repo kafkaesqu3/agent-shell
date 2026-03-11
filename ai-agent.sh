@@ -92,9 +92,9 @@ DOCKER_CMD="$DOCKER_CMD -v $(pwd):/workspace"
 # Volume: persistent Claude state
 DOCKER_CMD="$DOCKER_CMD -v $VOLUME_NAME:/home/agent/.claude"
 
-# Optional: host CLAUDE.md override (mounted directly — no processing needed)
+# Optional: host CLAUDE.md override (staged for entrypoint processing)
 if [ -f "$CLAUDE_HOME/CLAUDE.md" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/CLAUDE.md:/home/agent/.claude/CLAUDE.md:ro"
+    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/CLAUDE.md:/opt/host-config/CLAUDE.md:ro"
     echo -e "${GREEN}Mounting host CLAUDE.md${NC}"
 fi
 
@@ -104,9 +104,11 @@ if [ -f "$CLAUDE_HOME/settings.json" ]; then
     echo -e "${GREEN}Mounting host settings.json${NC}"
 fi
 
-# Optional: host credentials
+# Optional: host credentials — staged outside the named volume so the
+# entrypoint can copy them in (bind-mounting a file inside a named-volume
+# directory is unreliable; the volume wins).
 if [ -f "$CLAUDE_HOME/.credentials.json" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/.credentials.json:/home/agent/.claude/.credentials.json:ro"
+    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/.credentials.json:/opt/host-config/.credentials.json:ro"
     echo -e "${GREEN}Mounting host credentials${NC}"
 fi
 

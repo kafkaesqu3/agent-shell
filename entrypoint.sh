@@ -13,7 +13,11 @@ chown -R agent:agent /home/agent/.claude /home/agent/.config /workspace 2>/dev/n
 # Only credentials and session state (history, projects) are preserved.
 
 # --- Config files: always sync from image ---
-cp /opt/claude-config/CLAUDE.md /home/agent/.claude/CLAUDE.md
+if [ -f /opt/host-config/CLAUDE.md ]; then
+  cp /opt/host-config/CLAUDE.md /home/agent/.claude/CLAUDE.md
+else
+  cp /opt/claude-config/CLAUDE.md /home/agent/.claude/CLAUDE.md
+fi
 cp /opt/claude-config/CLAUDE.*.md /home/agent/.claude/ 2>/dev/null || true
 cp /opt/claude-config/settings.json /home/agent/.claude/settings.json
 if [ -f /opt/claude-config/statusline.sh ]; then
@@ -41,8 +45,15 @@ if [ -n "$BRIGHTDATA_API_KEY" ]; then
   sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" /home/agent/.claude/settings.json
 fi
 
-# --- Write credentials file if token provided and file missing ---
-if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ ! -f /home/agent/.claude/.credentials.json ]; then
+# --- Credentials: populate from host file or env var ---
+# Host file always wins (ensures host re-auth propagates into the container).
+# Env var is used in headless/CI deployments where no host file exists.
+# If neither is available, existing credentials in the named volume are kept
+# so that logging in interactively inside the container persists across runs.
+if [ -f /opt/host-config/.credentials.json ]; then
+  cp /opt/host-config/.credentials.json /home/agent/.claude/.credentials.json
+  chmod 600 /home/agent/.claude/.credentials.json
+elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ ! -f /home/agent/.claude/.credentials.json ]; then
   cat > /home/agent/.claude/.credentials.json <<EOF
 {
   "claudeAiOauth": {
