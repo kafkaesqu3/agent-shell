@@ -6,7 +6,7 @@ set -e
 # chown the agent user cannot write config files into the mounted directory.
 
 # --- Fix volume ownership (volume may be root-owned on first run) ---
-chown -R agent:agent /home/agent/.claude /home/agent/.config /workspace 2>/dev/null || true
+chown -R agent:agent /home/agent/.config /workspace 2>/dev/null || true
 
 # --- Persist ~/.claude.json across restarts via the named volume ---
 # ~/.claude.json sits next to ~/.claude/ and is not covered by the volume mount,
@@ -119,6 +119,9 @@ if ! command -v chromium &>/dev/null && [ -f /home/agent/.claude/settings.json ]
   jq 'del(.mcpServers.puppeteer, .mcpServers.playwright)' /home/agent/.claude/settings.json > /tmp/settings.json.tmp \
     && mv /tmp/settings.json.tmp /home/agent/.claude/settings.json 2>/dev/null || true
 fi
+
+# --- Fix ownership after all copies (cp runs as root, so new files are root-owned) ---
+chown -R agent:agent /home/agent/.claude 2>/dev/null || true
 
 # --- Lock down permissions on .claude directory ---
 chmod -R 700 /home/agent/.claude 2>/dev/null || true
