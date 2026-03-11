@@ -8,6 +8,20 @@ set -e
 # --- Fix volume ownership (volume may be root-owned on first run) ---
 chown -R agent:agent /home/agent/.claude /home/agent/.config /workspace 2>/dev/null || true
 
+# --- Persist ~/.claude.json across restarts via the named volume ---
+# ~/.claude.json sits next to ~/.claude/ and is not covered by the volume mount,
+# so it disappears on every container restart. We copy it in from the volume at
+# startup and trap EXIT to write it back, keeping it as a plain file throughout.
+CLAUDE_JSON_STORE=/home/agent/.claude/claude.json
+CLAUDE_JSON=/home/agent/.claude.json
+if [ -f "$CLAUDE_JSON_STORE" ]; then
+  cp "$CLAUDE_JSON_STORE" "$CLAUDE_JSON"
+else
+  echo '{}' > "$CLAUDE_JSON"
+fi
+chown agent:agent "$CLAUDE_JSON"
+trap 'cp -f "$CLAUDE_JSON" "$CLAUDE_JSON_STORE" 2>/dev/null || true' EXIT
+
 # Config files are always overwritten from the baked image so that rebuilding
 # the image is sufficient to pick up changes from claude-config/ in the repo.
 # Only credentials and session state (history, projects) are preserved.
@@ -110,4 +124,5 @@ fi
 chmod -R 700 /home/agent/.claude 2>/dev/null || true
 
 # --- Drop to agent user and hand off to the requested command ---
-exec gosu agent "$@"
+# No exec — shell must stay alive so the EXIT trap fires and saves ~/.claude.json
+gosu agent "$@"
