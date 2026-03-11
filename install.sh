@@ -133,6 +133,17 @@ if [ "$DO_CONFIG" = true ]; then
     warn "statusline.sh not found in repo — skipping"
   fi
 
+  # --- hook scripts ---
+  REPO_HOOKS="$SCRIPT_DIR/claude-config/hooks"
+  if [ -d "$REPO_HOOKS" ]; then
+    mkdir -p "$CLAUDE_HOME/hooks"
+    cp "$REPO_HOOKS"/*.sh "$CLAUDE_HOME/hooks/"
+    chmod +x "$CLAUDE_HOME/hooks/"*.sh
+    ok "hook scripts installed to $CLAUDE_HOME/hooks/"
+  else
+    warn "hooks/ directory not found in repo — skipping"
+  fi
+
   echo ""
 fi
 

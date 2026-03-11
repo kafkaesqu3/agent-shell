@@ -49,7 +49,11 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 
 # Install Claude Code via official installer (npm method is deprecated)
 RUN curl -fsSL https://claude.ai/install.sh | bash \
-    && cp /root/.local/bin/claude /usr/local/bin/claude
+    && cp /root/.local/bin/claude /usr/local/bin/claude-real
+
+# Wrap claude with --yolo → --dangerously-skip-permissions alias
+COPY claude-config/claude-container-wrapper.sh /usr/local/bin/claude
+RUN chmod +x /usr/local/bin/claude
 
 # Install Node.js AI tools
 RUN npm install -g \
