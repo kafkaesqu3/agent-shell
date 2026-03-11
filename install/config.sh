@@ -14,6 +14,9 @@ install_config() {
 
   if [ -f "$host_settings" ]; then
     info "Merging repo settings into existing $host_settings"
+    # Repo is the base; preserve user-specific overrides: model, plugins, UI prefs, attribution.
+    # For mcpServers, repo provides the schema but host values win — preserves already-substituted
+    # tokens on re-runs so __PLACEHOLDER__ strings never overwrite real tokens.
     jq -s '
       .[1] * {
         mcpServers: (.[1].mcpServers * (.[0].mcpServers // {})),
@@ -77,9 +80,14 @@ install_config() {
   # --- hooks ---
   if [ -d "$SCRIPT_DIR/claude-config/hooks" ]; then
     mkdir -p "$CLAUDE_HOME/hooks"
-    cp "$SCRIPT_DIR/claude-config/hooks"/*.sh "$CLAUDE_HOME/hooks/"
-    chmod +x "$CLAUDE_HOME/hooks/"*.sh
-    ok "hook scripts installed"
+    shopt -s nullglob
+    local hook_files=("$SCRIPT_DIR/claude-config/hooks"/*.sh)
+    shopt -u nullglob
+    if [ ${#hook_files[@]} -gt 0 ]; then
+      cp "${hook_files[@]}" "$CLAUDE_HOME/hooks/"
+      chmod +x "$CLAUDE_HOME/hooks/"*.sh
+      ok "hook scripts installed to $CLAUDE_HOME/hooks/"
+    fi
   else
     warn "hooks/ directory not found in repo — skipping"
   fi
