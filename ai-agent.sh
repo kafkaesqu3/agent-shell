@@ -18,6 +18,7 @@ NC='\033[0m'
 # Parse flags
 ENV_FILE=""
 CONTAINER_NAME=""
+SKILL_PROFILES=""
 while true; do
     if [[ "$1" == "--env" && -n "$2" ]]; then
         ENV_FILE="$2"
@@ -30,6 +31,12 @@ while true; do
         shift 2
     elif [[ "$1" == --name=* ]]; then
         CONTAINER_NAME="${1#--name=}"
+        shift
+    elif [[ "$1" == "--skills" && -n "$2" ]]; then
+        SKILL_PROFILES="$2"
+        shift 2
+    elif [[ "$1" == --skills=* ]]; then
+        SKILL_PROFILES="${1#--skills=}"
         shift
     else
         break
@@ -116,6 +123,8 @@ fi
 if [ -f "$HOME/.gitconfig" ]; then
     DOCKER_CMD="$DOCKER_CMD -v $HOME/.gitconfig:/home/agent/.gitconfig:ro"
 fi
+
+[ -n "$SKILL_PROFILES" ] && DOCKER_CMD="$DOCKER_CMD -e SKILL_PROFILES=$SKILL_PROFILES"
 
 DOCKER_CMD="$DOCKER_CMD -w /workspace"
 DOCKER_CMD="$DOCKER_CMD $IMAGE_NAME"

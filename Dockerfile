@@ -53,7 +53,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash \
 
 # Wrap claude with --yolo → --dangerously-skip-permissions alias
 COPY claude-config/claude-container-wrapper.sh /usr/local/bin/claude
-RUN chmod +x /usr/local/bin/claude
+RUN sed -i 's/\r//' /usr/local/bin/claude && chmod +x /usr/local/bin/claude
 
 # Install Node.js AI tools
 RUN npm install -g \
@@ -111,7 +111,10 @@ RUN mkdir -p /home/agent/.claude \
 # Copy config files and entrypoint
 COPY claude-config/ /opt/claude-config/
 COPY entrypoint.sh /opt/entrypoint.sh
-RUN chmod +x /opt/entrypoint.sh
+# Strip Windows CRLF line endings so shebangs work on Linux
+RUN find /opt/claude-config -name "*.sh" -exec sed -i 's/\r//' {} + \
+    && sed -i 's/\r//' /opt/entrypoint.sh \
+    && chmod +x /opt/entrypoint.sh /opt/claude-config/hooks/*.sh 2>/dev/null || true
 
 WORKDIR /workspace
 

@@ -13,18 +13,15 @@
   "enableAllProjectMcpServers": false,
   "alwaysThinkingEnabled": true,
   "enabledPlugins": {
-    "github@claude-plugins-official": true,
     "superpowers@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
     "commit-commands@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
-    "gopls-lsp@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
     "claude-md-management@claude-plugins-official": true,
     "security-guidance@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true
+    "code-review@claude-plugins-official": true,
+    "suggesting-skills@agent-plugins": true
   },
   "clearTerminalOnLaunch": false,
   "cleanupPeriodDays": 365,
@@ -117,6 +114,16 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/stop-git-commit.sh"
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Write",
@@ -124,10 +131,6 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/post-write-lint.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/auto-git-commit.sh"
           }
         ]
       },
@@ -137,10 +140,6 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/post-write-lint.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/auto-git-commit.sh"
           }
         ]
       }

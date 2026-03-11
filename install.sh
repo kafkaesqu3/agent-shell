@@ -133,6 +133,12 @@ if [ "$DO_CONFIG" = true ]; then
     warn "statusline.sh not found in repo — skipping"
   fi
 
+  # --- skill-profiles.json ---
+  if [ -f "$SCRIPT_DIR/claude-config/skill-profiles.json" ]; then
+    cp "$SCRIPT_DIR/claude-config/skill-profiles.json" "$CLAUDE_HOME/skill-profiles.json"
+    ok "skill-profiles.json installed to $CLAUDE_HOME/skill-profiles.json"
+  fi
+
   # --- hook scripts ---
   REPO_HOOKS="$SCRIPT_DIR/claude-config/hooks"
   if [ -d "$REPO_HOOKS" ]; then

@@ -64,6 +64,41 @@ EOF
   chmod 600 /home/agent/.claude/.credentials.json
 fi
 
+# --- Skill profiles: merge extra plugins into settings.json ---
+# Starts with the default plugins baked into settings.json, then adds profiles
+# from two sources (combined, deduplicated):
+#   1. SKILL_PROFILES env var — explicit list e.g. "web,go"
+#   2. Auto-detection — scans /workspace for well-known project files
+PROFILES_FILE=/opt/claude-config/skill-profiles.json
+if [ -f "$PROFILES_FILE" ]; then
+  ACTIVE_PROFILES="${SKILL_PROFILES:-}"
+
+  # Auto-detect workspace project type
+  while IFS= read -r indicator; do
+    path_to_check="/workspace/$indicator"
+    if [ -e "$path_to_check" ]; then
+      detected=$(jq -r --arg k "$indicator" '.autodetect[$k] // [] | join(",")' "$PROFILES_FILE")
+      [ -n "$detected" ] && ACTIVE_PROFILES="${ACTIVE_PROFILES:+$ACTIVE_PROFILES,}$detected"
+    fi
+  done < <(jq -r '.autodetect | keys[]' "$PROFILES_FILE")
+
+  if [ -n "$ACTIVE_PROFILES" ]; then
+    # Build {plugin: true} map for all plugins in the selected profiles
+    EXTRA=$(jq -n \
+      --arg profiles "$ACTIVE_PROFILES" \
+      --slurpfile sp "$PROFILES_FILE" '
+        ($profiles | split(",") | map(ltrimstr(" ") | rtrimstr(" "))) as $names |
+        $sp[0].profiles as $p |
+        [$names[] | $p[.] // []] | flatten | unique |
+        map({key: ., value: true}) | from_entries
+      ')
+    jq --argjson extra "$EXTRA" '.enabledPlugins += $extra' \
+      /home/agent/.claude/settings.json > /tmp/settings.json.tmp \
+      && mv /tmp/settings.json.tmp /home/agent/.claude/settings.json
+    echo "Skills loaded: $ACTIVE_PROFILES" >&2
+  fi
+fi
+
 # --- Conditionally strip browser MCP servers if not in browsing image ---
 if ! command -v chromium &>/dev/null && [ -f /home/agent/.claude/settings.json ]; then
   # Remove puppeteer and playwright entries since browser isn't available

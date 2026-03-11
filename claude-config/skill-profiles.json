@@ -1,0 +1,23 @@
+{
+  "default": [
+    "superpowers@claude-plugins-official",
+    "commit-commands@claude-plugins-official",
+    "hookify@claude-plugins-official",
+    "context7@claude-plugins-official",
+    "claude-code-setup@claude-plugins-official",
+    "claude-md-management@claude-plugins-official",
+    "security-guidance@claude-plugins-official",
+    "code-review@claude-plugins-official",
+    "suggesting-skills@agent-plugins"
+  ],
+  "profiles": {
+    "web":    ["frontend-design@claude-plugins-official", "playwright@claude-plugins-official"],
+    "go":     ["gopls-lsp@claude-plugins-official"],
+    "github": ["github@claude-plugins-official"]
+  },
+  "autodetect": {
+    "package.json": ["web"],
+    "go.mod":       ["go"],
+    ".github":      ["github"]
+  }
+}
