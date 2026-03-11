@@ -80,7 +80,7 @@ Always use Context7 MCP when I need library/API documentation, code generation, 
 2. Run relevant tests -- not the full suite
 3. Run linters and type checker -- fix everything before committing
 
-**Commits:** Imperative mood, <=72 char subject line, one logical change per commit.
+**Commits:** Imperative mood, <=72 char subject line, one logical change per commit. Never add `Co-Authored-By` or any Claude/AI attribution lines to commit messages.
 
 **Pull requests:** Describe what the code does now -- not discarded approaches. Use plain, factual language.
 
