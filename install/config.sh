@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# install_config: copy Claude Code config files to ~/.claude
+set -euo pipefail
+# shellcheck source=install/common.sh
+[[ -z "${SCRIPT_DIR:-}" ]] && source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/install/common.sh"
+
+install_config() {
+  echo -e "${BOLD}--- Claude Code Configuration ---${NC}"
+  mkdir -p "$CLAUDE_HOME"
+
+  # --- settings.json: merge MCP servers ---
+  local repo_settings="$SCRIPT_DIR/claude-config/settings.json"
+  local host_settings="$CLAUDE_HOME/settings.json"
+
+  if [ -f "$host_settings" ]; then
+    info "Merging repo settings into existing $host_settings"
+    jq -s '
+      .[1] * {
+        mcpServers: (.[1].mcpServers * (.[0].mcpServers // {})),
+        model:                 (.[0].model // .[1].model),
+        enabledPlugins:        (.[0].enabledPlugins // {}),
+        clearTerminalOnLaunch: (.[0].clearTerminalOnLaunch // .[1].clearTerminalOnLaunch),
+        attribution:           (.[0].attribution // .[1].attribution)
+      }
+      | if .model == null then del(.model) else . end
+    ' "$host_settings" "$repo_settings" > /tmp/claude-settings-merged.json
+
+    local merged=/tmp/claude-settings-merged.json
+    [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
+      sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$merged"
+
+    cp "$host_settings" "${host_settings}.bak"
+    mv "$merged" "$host_settings"
+    ok "Settings merged (backup at settings.json.bak)"
+  else
+    info "No existing settings.json — copying from repo"
+    cp "$repo_settings" "$host_settings"
+    [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
+      sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$host_settings"
+    ok "settings.json installed"
+  fi
+
+  # --- CLAUDE.md ---
+  local repo_claude_md="$SCRIPT_DIR/claude-config/CLAUDE.md"
+  local host_claude_md="$CLAUDE_HOME/CLAUDE.md"
+  local marker="# Global Development Standards"
+
+  if [ -f "$host_claude_md" ]; then
+    if grep -qF "$marker" "$host_claude_md" 2>/dev/null; then
+      ok "CLAUDE.md already contains repo instructions"
+    else
+      info "Replacing CLAUDE.md with repo version (backup at CLAUDE.md.bak)"
+      cp "$host_claude_md" "${host_claude_md}.bak"
+      cp "$repo_claude_md" "$host_claude_md"
+      ok "CLAUDE.md replaced"
+    fi
+  else
+    cp "$repo_claude_md" "$host_claude_md"
+    ok "CLAUDE.md installed"
+  fi
+
+  # --- statusline.sh ---
+  if [ -f "$SCRIPT_DIR/claude-config/statusline.sh" ]; then
+    cp "$SCRIPT_DIR/claude-config/statusline.sh" "$CLAUDE_HOME/statusline.sh"
+    chmod +x "$CLAUDE_HOME/statusline.sh"
+    ok "statusline.sh installed"
+  else
+    warn "statusline.sh not found in repo — skipping"
+  fi
+
+  # --- skill-profiles.json ---
+  if [ -f "$SCRIPT_DIR/claude-config/skill-profiles.json" ]; then
+    cp "$SCRIPT_DIR/claude-config/skill-profiles.json" "$CLAUDE_HOME/skill-profiles.json"
+    ok "skill-profiles.json installed"
+  fi
+
+  # --- hooks ---
+  if [ -d "$SCRIPT_DIR/claude-config/hooks" ]; then
+    mkdir -p "$CLAUDE_HOME/hooks"
+    cp "$SCRIPT_DIR/claude-config/hooks"/*.sh "$CLAUDE_HOME/hooks/"
+    chmod +x "$CLAUDE_HOME/hooks/"*.sh
+    ok "hook scripts installed"
+  else
+    warn "hooks/ directory not found in repo — skipping"
+  fi
+
+  echo ""
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/install/common.sh"
+  install_config
+fi
