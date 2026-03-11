@@ -14,17 +14,17 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
-ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
-err()   { echo -e "${RED}[ERROR]${NC} $1"; }
+info()  { echo -e "${BLUE}[INFO]${NC} $*"; }   # $* intentional: joins multi-word messages
+ok()    { echo -e "${GREEN}[OK]${NC} $*"; }    # callers always pass simple string literals
+warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
+err()   { echo -e "${RED}[ERROR]${NC} $*"; }
 
 cmd_exists() { command -v "$1" &>/dev/null; }
 
 detect_os() {
   if [[ "$OSTYPE" == "darwin"* ]]; then
     echo "macos"
-  elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  elif [[ "$OSTYPE" == linux* ]]; then
     if cmd_exists apt-get;                    then echo "ubuntu"
     elif cmd_exists dnf || cmd_exists yum;    then echo "fedora"
     elif cmd_exists pacman;                   then echo "arch"
