@@ -22,6 +22,11 @@ Focus on:
 - Undocumented format reverse engineering: binary structs, encoding, magic
   bytes
 
+Use analysis tools (objdump, strings, xxd, readelf, radare2, binwalk) freely
+against the subject. Do NOT execute the subject binary or run extracted code
+unless the user explicitly instructs it — analysis tools are safe; executing
+unknown code is not.
+
 Document findings systematically: what you analyzed, what tools you used,
 what you found, open questions.
 
