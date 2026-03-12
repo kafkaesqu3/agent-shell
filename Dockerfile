@@ -108,6 +108,20 @@ RUN mkdir -p /home/agent/.claude \
     && mkdir -p /workspace \
     && chown -R agent:agent /home/agent /workspace
 
+# Pre-install Claude Code plugins as agent user (baked into image; named volume inherits on first run)
+RUN su -s /bin/bash agent -c ' \
+    HOME=/home/agent \
+    claude plugin install superpowers@claude-plugins-official && \
+    claude plugin install commit-commands@claude-plugins-official && \
+    claude plugin install hookify@claude-plugins-official && \
+    claude plugin install context7@claude-plugins-official && \
+    claude plugin install frontend-design@claude-plugins-official && \
+    claude plugin install claude-code-setup@claude-plugins-official && \
+    claude plugin install claude-md-management@claude-plugins-official && \
+    claude plugin install security-guidance@claude-plugins-official && \
+    claude plugin install code-review@claude-plugins-official \
+  '
+
 # Copy config files and entrypoint
 COPY claude-config/ /opt/claude-config/
 COPY entrypoint.sh /opt/entrypoint.sh

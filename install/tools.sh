@@ -83,6 +83,32 @@ _install_arch() {
   ok "Arch dependencies installed"
 }
 
+_install_claude_plugins() {
+  if ! cmd_exists claude; then warn "Claude Code not found — skipping plugins"; return; fi
+
+  info "Installing Claude Code plugins..."
+  local plugins=(
+    "superpowers@claude-plugins-official"
+    "commit-commands@claude-plugins-official"
+    "hookify@claude-plugins-official"
+    "context7@claude-plugins-official"
+    "frontend-design@claude-plugins-official"
+    "claude-code-setup@claude-plugins-official"
+    "claude-md-management@claude-plugins-official"
+    "security-guidance@claude-plugins-official"
+    "code-review@claude-plugins-official"
+  )
+
+  for plugin in "${plugins[@]}"; do
+    if claude plugin install "$plugin" 2>/dev/null; then
+      ok "  $plugin"
+    else
+      warn "  $plugin (skipped)"
+    fi
+  done
+  ok "Claude Code plugins installed"
+}
+
 install_tools() {
   echo -e "${BOLD}--- Installing Tools ---${NC}"
 
@@ -112,6 +138,9 @@ install_tools() {
   info "Installing Claude Code..."
   curl -fsSL https://claude.ai/install.sh | bash 2>&1 | tail -3
   ok "Claude Code installed"
+
+  # Claude Code plugins
+  _install_claude_plugins
 
   # OS-specific dev tools
   local os
