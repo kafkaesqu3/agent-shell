@@ -52,6 +52,12 @@ if [ -d /opt/claude-config/hooks ]; then
   chmod +x /home/agent/.claude/hooks/*.sh
 fi
 
+# --- Copy agent definitions ---
+if [ -d /opt/claude-config/agents ]; then
+  mkdir -p /home/agent/.claude/agents
+  cp /opt/claude-config/agents/*.md /home/agent/.claude/agents/
+fi
+
 # --- Patch MCP env var placeholders in settings.json ---
 # Only needed for values embedded in URLs/strings (not MCP server env blocks,
 # which inherit the container environment directly).
