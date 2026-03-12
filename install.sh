@@ -51,6 +51,7 @@ _usage() {
 }
 
 _run() {
+  # Reads do_* vars from caller scope (globals in flag-parse path, locals in _menu).
   # shellcheck source=install/config.sh
   [[ "$do_config" == true ]] && { source "$SCRIPT_DIR/install/config.sh"; install_config; }
   # shellcheck source=install/tools.sh

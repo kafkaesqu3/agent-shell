@@ -55,7 +55,7 @@ fi
 # --- Copy agent definitions ---
 if [ -d /opt/claude-config/agents ]; then
   mkdir -p /home/agent/.claude/agents
-  cp /opt/claude-config/agents/*.md /home/agent/.claude/agents/
+  cp /opt/claude-config/agents/*.md /home/agent/.claude/agents/ 2>/dev/null || true
 fi
 
 # --- Patch MCP env var placeholders in settings.json ---
