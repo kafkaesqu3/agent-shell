@@ -10,8 +10,6 @@ TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 # Git-init if not already a repo
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   git init
-  git config user.email "agent@local"
-  git config user.name "Claude Agent"
 fi
 
 # Stage everything
@@ -40,7 +38,6 @@ fi
 
 git commit \
   -m "$MSG" \
-  --author="Claude Agent <agent@local>" \
   >/dev/null 2>&1 || true
 
 exit 0
