@@ -19,6 +19,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=install/common.sh
 source "$SCRIPT_DIR/install/common.sh"
 
+# Load .env if present — populates API keys for placeholder substitution in install_config
+if [[ -f "$SCRIPT_DIR/.env" ]]; then
+  # shellcheck disable=SC1091
+  set -o allexport; source "$SCRIPT_DIR/.env"; set +o allexport
+fi
+
 _banner() {
   echo -e "${BOLD}${BLUE}"
   echo "╔══════════════════════════════════════╗"
