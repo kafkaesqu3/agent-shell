@@ -1,4 +1,23 @@
 services:
+  # Minimal: Claude Code only, fast build
+  ai-agent-lite:
+    build:
+      context: .
+      target: lite
+    image: ai-agent:lite
+    container_name: ai-agent-lite
+    stdin_open: true
+    tty: true
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - .:/workspace
+      - ai-agent-claude:/home/agent/.claude
+      - ai-agent-config:/home/agent/.config
+    working_dir: /workspace
+
+  # Full dev environment: Go, GitHub CLI, MCP servers, AI tools
   ai-agent:
     build:
       context: .
@@ -7,15 +26,15 @@ services:
     container_name: ai-agent
     stdin_open: true
     tty: true
+    # NET_ADMIN + NET_RAW enable optional iptables-based network isolation
+    # (allowlist outbound traffic to GitHub, npm, PyPI, etc. for untrusted repos)
+    cap_add: [NET_ADMIN, NET_RAW]
     env_file:
       - path: .env
         required: false
     volumes:
-      # Mount current directory to /workspace
       - .:/workspace
-      # Persistent Claude Code state (credentials, history, settings)
       - ai-agent-claude:/home/agent/.claude
-      # Persistent AI tool configurations
       - ai-agent-config:/home/agent/.config
     working_dir: /workspace
 
@@ -24,10 +43,11 @@ services:
     build:
       context: .
       target: browsing
-    image: ai-agent-browsing:latest
+    image: ai-agent:browsing
     container_name: ai-agent-browsing
     stdin_open: true
     tty: true
+    cap_add: [NET_ADMIN, NET_RAW]
     env_file:
       - path: .env
         required: false

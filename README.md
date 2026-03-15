@@ -12,11 +12,32 @@ cd ~/ai-agent-shell
 cp .env.example ~/.config/ai-agent/.env
 # edit ~/.config/ai-agent/.env
 
-# Install config, tools, and PATH setup
-./install.sh
+# Build Docker images
+docker build --target lite     -t ai-agent:lite .      # Claude Code only (fast)
+docker build --target base     -t ai-agent:latest .    # full dev environment
+docker build --target browsing -t ai-agent:browsing .  # full + browser automation
+docker compose up ai-agent-lite      # Claude Code only
+docker compose up ai-agent           # full dev environment
+docker compose up ai-agent-browsing  # full + browser automation
+
+# Run host installation
+./install.sh --all                # everything
+./install.sh --config             # Claude config files only
+./install.sh --tools              # fnm, Node.js, Claude Code, OS dev tools
+./install.sh --mcp                # MCP servers
+./install.sh --agents             # agent definitions
+./install.sh --docker             # build Docker images
+./install.sh --path               # PATH, symlinks, shell snippets
+
+# Launch container (mounts CWD as /workspace)
+./ai-agent.sh                     # Linux/macOS
+./ai-agent.ps1                    # Windows PowerShell
+
+# Test entrypoint logic
+bash entrypoint.sh claude         # dry-run entrypoint
 
 # Paste the shell snippets printed by install.sh into ~/.zshrc or ~/.bashrc
-# (includes nvm init + claude wrapper function)
+# (includes fnm init + claude wrapper function)
 source ~/.zshrc   # or ~/.bashrc
 
 # Done — run claude from any project
@@ -26,6 +47,18 @@ claude --host     # runs Claude Code locally on the host
 ```
 
 **Windows (PowerShell):** paste the function printed by `install.sh` into your PowerShell profile, then use `claude` or `ai-agent.ps1` directly.
+
+### Install Modules
+
+`install.sh` delegates to modular scripts in `install/`:
+
+- `common.sh` — shared utilities (color output, `cmd_exists`, `detect_os`)
+- `config.sh` — installs `claude-config/` files to `~/.claude/`
+- `tools.sh` — fnm, Node.js 22 LTS, Claude Code, OS dev tools
+- `mcp.sh` — MCP servers (npm global + Python venv)
+- `agents.sh` — agent definitions to `~/.claude/agents/`
+- `docker.sh` — builds Docker images
+- `path.sh` — symlinks, `claude-wrapper.sh`, shell rc snippets
 
 ## What's Included
 
@@ -52,13 +85,22 @@ claude --host     # runs Claude Code locally on the host
 | `playwright` | Browser automation/testing _(browsing image only)_ |
 
 ### Runtimes & Tools
-- Node.js 22 LTS, Python 3.12, Go 1.23
+- Node.js 22 LTS via [fnm](https://github.com/Schniz/fnm) (fast, per-directory version switching), Python 3.12, Go 1.23
 - Git, GitHub CLI (`gh`), `jq`, `curl`
+- `ripgrep`, `fd`, `fzf`, `tmux` baked in
+
+### Shell
+- **zsh** is the default shell with history (200k lines), completion, and auto-cd
+- **fzf** wired to `fd` for fast, `.gitignore`-aware fuzzy file finding
+- **`claude-yolo`** alias for `claude --dangerously-skip-permissions`
+- **tmux** pre-configured with mouse support, vi keys, true colour, and large scrollback
 
 ### Claude Code Configuration
 - **Statusline** — two-line prompt with model, cost, context %, session time
 - **Safety guardrails** — blocks `rm -rf`, force-push, direct push to main/master
-- **Credential protection** — denies reading SSH keys, AWS/GCP creds, wallet files
+- **Credential protection** — denies reading SSH keys, AWS/GCP creds, wallet files, and the baked config dir (`/opt/claude-config`)
+- **npm supply-chain hardening** — exact version pinning, 24-hour publish delay, postinstall scripts disabled
+- **Onboarding bypass** — headless containers start non-interactively when `CLAUDE_CODE_OAUTH_TOKEN` is set
 - **Telemetry disabled** — no usage reporting or feedback surveys
 - **Always-thinking mode** enabled
 
@@ -77,7 +119,7 @@ cd ~/ai-agent-shell
 ```
 
 This installs:
-- Node.js 22 via nvm (installs nvm if missing)
+- Node.js 22 via fnm (installs fnm if missing)
 - `claude` CLI
 - All npm MCP servers globally
 - `mcp-server-fetch` in an isolated Python venv → symlinked to `~/.local/bin`
@@ -121,15 +163,28 @@ Build once, launch in any project directory.
 
 #### Build
 
+Three image targets are available depending on how much you need:
+
+| Target | Tag | Contents |
+|--------|-----|----------|
+| `lite` | `ai-agent:lite` | Claude Code only — fastest build, smallest image |
+| `base` | `ai-agent:latest` | Full dev environment: Go, GitHub CLI, MCP servers, AI tools |
+| `browsing` | `ai-agent:browsing` | Everything in `base` + Chromium, Puppeteer, Playwright |
+
+Each target inherits from the one above (`lite` → `base` → `browsing`), so Docker cache is shared.
+
 ```bash
-# Base image (all AI tools, no browser)
+# Claude Code only (fastest build)
+docker build -t ai-agent:lite --target lite .
+
+# Full dev environment (default)
 docker build -t ai-agent:latest --target base .
 
-# Optional: browsing variant (adds Chromium, Puppeteer, Playwright)
-docker build -t ai-agent-browsing:latest --target browsing .
+# Full + browser automation
+docker build -t ai-agent:browsing --target browsing .
 ```
 
-Or use `install.sh --docker` to build as part of the full install:
+Or use `install.sh --docker` for an interactive menu that lets you choose which to build:
 
 ```bash
 ./install.sh --docker
@@ -209,8 +264,8 @@ To update config: edit `claude-config/`, rebuild (`docker build` or `./install.s
 
 ```
 agent-shell/
-├── Dockerfile              # Multi-stage: base + browsing targets
-├── docker-compose.yml      # Two services: ai-agent, ai-agent-browsing
+├── Dockerfile              # Multi-stage: lite, base, browsing targets
+├── docker-compose.yml      # Three services: ai-agent-lite, ai-agent, ai-agent-browsing
 ├── entrypoint.sh           # Config layering, credential setup, statusline install
 ├── install.sh              # Host/VPS installer (Claude Code + MCP + config)
 ├── ai-agent.sh             # Bash launcher (add to PATH)
@@ -294,8 +349,9 @@ docker exec -it my-session bash
 ### docker-compose
 
 ```bash
-docker compose up ai-agent          # base variant
-docker compose up ai-agent-browsing # browsing variant
+docker compose up ai-agent-lite     # Claude Code only
+docker compose up ai-agent          # full dev environment
+docker compose up ai-agent-browsing # full + browser automation
 ```
 
 ### Multiple simultaneous sessions
@@ -308,6 +364,42 @@ cd ~/projects/project-a && ai-agent
 
 # Terminal 2 — project B
 cd ~/projects/project-b && ai-agent
+```
+
+### Lite image
+
+For a fast-starting container with only Claude Code (no Go, MCP servers, AI tools):
+
+```bash
+ai-agent --lite          # uses ai-agent:lite image
+docker compose up ai-agent-lite
+```
+
+### Session sync
+
+Copies Claude session logs from a container to your host so `/insights` works across sessions:
+
+```bash
+cd ~/projects/my-app
+ai-agent sync            # syncs from container named after the current directory
+ai-agent --name my-session sync   # sync from a named container
+```
+
+Session logs land in `~/.claude/projects/` on the host. Works with both running and stopped containers.
+
+### Network isolation (for untrusted repos)
+
+The `base` and `browsing` services include `NET_ADMIN` and `NET_RAW` capabilities, enabling iptables-based outbound filtering. To allowlist only known-good hosts:
+
+```bash
+# Inside the container — restrict outbound to GitHub, npm, PyPI, Anthropic
+iptables -P OUTPUT DROP
+iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -d api.anthropic.com -j ACCEPT
+iptables -A OUTPUT -d registry.npmjs.org -j ACCEPT
+iptables -A OUTPUT -d pypi.org,files.pythonhosted.org -j ACCEPT
+iptables -A OUTPUT -d github.com,api.github.com -j ACCEPT
+iptables -A OUTPUT -d go.dev,proxy.golang.org,sum.golang.org -j ACCEPT
 ```
 
 ### Per-project .env
@@ -324,7 +416,7 @@ ai-agent   # picks up .env in current directory automatically
 Edit files in `claude-config/`, then rebuild and restart:
 
 ```bash
-docker build -t ai-agent:latest --target base .
+docker build -t ai-agent:latest --target base .  # or :lite / :browsing
 ai-agent   # entrypoint writes fresh config on every start
 ```
 
@@ -333,11 +425,13 @@ ai-agent   # entrypoint writes fresh config on every start
 ## install.sh flags
 
 ```
-./install.sh              # config + tools + PATH (no Docker)
-./install.sh --docker     # same + build Docker images
-./install.sh --docker-only
-./install.sh --config-only
-./install.sh --path-only
-./install.sh --no-tools
-./install.sh --no-path
+./install.sh              # interactive menu
+./install.sh --all        # config + tools + mcp + agents + docker + path
+./install.sh --config     # Claude Code config files only
+./install.sh --tools      # fnm, Node.js, Claude Code, OS dev tools
+./install.sh --mcp        # MCP servers
+./install.sh --agents     # agent definitions
+./install.sh --docker     # build Docker images (interactive: lite / base / browsing / all)
+./install.sh --path       # symlinks, claude wrapper, shell snippets
+./install.sh --skip-docker  # skip Docker when used with --all
 ```

@@ -1,0 +1,37 @@
+# fnm — activate per-directory .node-version/.nvmrc switching
+export PATH="/opt/fnm:${PATH}"
+eval "$(fnm env --use-on-cd --shell zsh 2>/dev/null)" 2>/dev/null || true
+
+# Python venv (base/browsing images only)
+[[ -d /opt/venv ]] && export PATH="/opt/venv/bin:${PATH}"
+
+# Go binaries (base/browsing images only)
+[[ -d /usr/local/go ]] && export PATH="/usr/local/go/bin:${PATH}"
+
+# History
+HISTSIZE=200000
+SAVEHIST=200000
+HISTFILE=~/.zsh_history
+setopt HIST_IGNORE_ALL_DUPS SHARE_HISTORY APPEND_HISTORY
+
+# Directory navigation
+setopt AUTO_CD AUTO_PUSHD
+
+# Completion
+autoload -Uz compinit && compinit
+
+# Aliases
+alias fd='fdfind'                                        # Ubuntu package name
+alias claude-yolo='claude --dangerously-skip-permissions'
+# sg (ast-grep) — AST-aware code search — already on PATH as 'sg' via @ast-grep/cli
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'
+
+# fzf — use fd for faster, .gitignore-aware file finding
+export FZF_DEFAULT_COMMAND='fdfind --type f --hidden --exclude .git'
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_DEFAULT_OPTS='--height 40% --reverse --border'
+
+# fzf shell integration (key bindings + tab completion)
+source /usr/share/doc/fzf/examples/key-bindings.zsh 2>/dev/null || true
+source /usr/share/doc/fzf/examples/completion.zsh    2>/dev/null || true

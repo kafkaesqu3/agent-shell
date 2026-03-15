@@ -1,12 +1,23 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Entrypoint runs as root so it can fix volume ownership before dropping to
 # the agent user. Named volumes are initialised owned by root; without this
 # chown the agent user cannot write config files into the mounted directory.
 
+# --- Remap agent UID/GID to match the host user (prevents bind-mount ownership corruption) ---
+# ai-agent.sh passes HOST_UID / HOST_GID from $(id -u) / $(id -g) on the host.
+HOST_UID=${HOST_UID:-1000}
+HOST_GID=${HOST_GID:-1000}
+if [ "$(id -u agent)" != "$HOST_UID" ] || [ "$(id -g agent)" != "$HOST_GID" ]; then
+    groupmod -g "$HOST_GID" agent 2>/dev/null || true
+    usermod  -u "$HOST_UID" agent 2>/dev/null || true
+fi
+
 # --- Fix volume ownership (volume may be root-owned on first run) ---
-chown -R agent:agent /home/agent/.config /workspace 2>/dev/null || true
+# Do NOT chown /workspace — it is a bind-mounted host directory and chowning it
+# would corrupt file ownership on the host.
+chown -R agent:agent /home/agent/.config 2>/dev/null || true
 
 # --- Persist ~/.claude.json across restarts via the named volume ---
 # ~/.claude.json sits next to ~/.claude/ and is not covered by the volume mount,
@@ -58,6 +69,10 @@ if [ -d /opt/claude-config/agents ]; then
   cp /opt/claude-config/agents/*.md /home/agent/.claude/agents/ 2>/dev/null || true
 fi
 
+# --- Sync shell and tmux dotfiles ---
+[ -f /opt/claude-config/zshrc     ] && cp /opt/claude-config/zshrc     /home/agent/.zshrc
+[ -f /opt/claude-config/tmux.conf ] && cp /opt/claude-config/tmux.conf /home/agent/.tmux.conf
+
 # --- Patch MCP env var placeholders in settings.json ---
 # Only needed for values embedded in URLs/strings (not MCP server env blocks,
 # which inherit the container environment directly).
@@ -82,6 +97,27 @@ elif [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ ! -f /home/agent/.claude/.creden
 }
 EOF
   chmod 600 /home/agent/.claude/.credentials.json
+fi
+
+# --- Onboarding bypass (https://github.com/anthropics/claude-code/issues/8938) ---
+# Claude Code shows an interactive wizard on first run if ~/.claude.json has no
+# hasCompletedOnboarding flag. When a token is available, seed the flag and run
+# a throwaway prompt once so the container starts non-interactively every time.
+if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  ONBOARDING_DONE=$(jq -r '.hasCompletedOnboarding // false' "$CLAUDE_JSON" 2>/dev/null || echo "false")
+  if [ "$ONBOARDING_DONE" != "true" ]; then
+    tmp=$(mktemp)
+    jq --arg tok "$CLAUDE_CODE_OAUTH_TOKEN" \
+      '.oauthAccount.accessToken = $tok | .hasCompletedOnboarding = true' \
+      "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
+    chown agent:agent "$CLAUDE_JSON"
+    # Run a throwaway prompt to populate initial config state (runs once per volume)
+    gosu agent claude -p "ok" --output-format json >/dev/null 2>&1 || true
+    # Re-apply flag in case claude rewrote the file without it
+    tmp=$(mktemp)
+    jq '.hasCompletedOnboarding = true' "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
+    chown agent:agent "$CLAUDE_JSON"
+  fi
 fi
 
 # --- Skill profiles: merge extra plugins into settings.json ---

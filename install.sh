@@ -6,7 +6,7 @@
 #   (no flags)      Interactive menu
 #   --all           Run all steps: config + tools + mcp + agents + docker + path
 #   --config        Install Claude Code config files
-#   --tools         Install nvm/node/claude + OS dev tools
+#   --tools         Install fnm/node/claude + OS dev tools
 #   --mcp           Install MCP servers
 #   --agents        Install Claude Code agent definitions
 #   --docker        Build Docker images
@@ -47,7 +47,7 @@ _usage() {
   echo "  (no flags)      Interactive menu"
   echo "  --all           Run all steps: config + tools + mcp + agents + docker + path"
   echo "  --config        Install Claude Code config files"
-  echo "  --tools         Install nvm/node/claude + OS dev tools"
+  echo "  --tools         Install fnm/node/claude + OS dev tools"
   echo "  --mcp           Install MCP servers"
   echo "  --agents        Install Claude Code agent definitions"
   echo "  --docker        Build Docker images"
@@ -77,7 +77,7 @@ _menu() {
   echo ""
   echo "  1) All (config + tools + MCP + agents + path)"
   echo "  2) Claude Code config (CLAUDE.md, settings, hooks)"
-  echo "  3) Tools (nvm, Node.js, Claude Code, dev tools)"
+  echo "  3) Tools (fnm, Node.js, Claude Code, dev tools)"
   echo "  4) MCP servers"
   echo "  5) Docker images"
   echo "  6) PATH + shell aliases"

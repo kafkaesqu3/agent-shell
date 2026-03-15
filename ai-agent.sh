@@ -19,6 +19,7 @@ NC='\033[0m'
 ENV_FILE=""
 CONTAINER_NAME=""
 SKILL_PROFILES=""
+USE_RM=false
 while true; do
     if [[ "$1" == "--env" && -n "$2" ]]; then
         ENV_FILE="$2"
@@ -38,10 +39,42 @@ while true; do
     elif [[ "$1" == --skills=* ]]; then
         SKILL_PROFILES="${1#--skills=}"
         shift
+    elif [[ "$1" == "--rm" ]]; then
+        USE_RM=true
+        shift
+    elif [[ "$1" == "--lite" ]]; then
+        IMAGE_NAME="ai-agent:lite"
+        shift
+    elif [[ "$1" == "--browsing" ]]; then
+        IMAGE_NAME="ai-agent:browsing"
+        shift
     else
         break
     fi
 done
+
+# Handle subcommands
+if [[ "${1:-}" == "sync" ]]; then
+    if [ -z "$CONTAINER_NAME" ]; then
+        CONTAINER_NAME="$(basename "$(pwd)")"
+    fi
+    if ! docker info > /dev/null 2>&1; then
+        echo -e "${RED}Docker is not running!${NC}"; exit 1
+    fi
+    mkdir -p "$HOME/.claude/projects"
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+        echo -e "${BLUE}Syncing from running container: $CONTAINER_NAME${NC}"
+    elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+        echo -e "${BLUE}Syncing from stopped container: $CONTAINER_NAME${NC}"
+    else
+        echo -e "${RED}Container not found: $CONTAINER_NAME${NC}"
+        echo "Specify with --name, or run from the project directory (container is named after the directory)"
+        exit 1
+    fi
+    docker cp "${CONTAINER_NAME}:/home/agent/.claude/projects/." "$HOME/.claude/projects/" 2>/dev/null || true
+    echo -e "${GREEN}Session logs synced to ~/.claude/projects/${NC}"
+    exit 0
+fi
 
 # Resolve .env file: --env flag > .env in current dir > .env in script dir > ~/.config/ai-agent/.env
 if [ -z "$ENV_FILE" ]; then
@@ -66,11 +99,15 @@ if ! docker info > /dev/null 2>&1; then
 fi
 echo -e "${GREEN}Docker is running${NC}"
 
-# Build docker run command
-if [ -n "$CONTAINER_NAME" ]; then
-    DOCKER_CMD="docker run -it --name $CONTAINER_NAME"
+# Build docker run command as an array (safe word-splitting, no eval)
+DOCKER_ARGS=("docker" "run" "-it")
+if [ "$USE_RM" = true ]; then
+    DOCKER_ARGS+=("--rm")
 else
-    DOCKER_CMD="docker run -it --rm"
+    if [ -z "$CONTAINER_NAME" ]; then
+        CONTAINER_NAME="$(basename "$(pwd)")"
+    fi
+    DOCKER_ARGS+=("--name" "$CONTAINER_NAME")
 fi
 
 # Parse .env and pass each var as -e KEY=VAL
@@ -79,7 +116,7 @@ if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" || "$line" == \#* ]] && continue  # skip blanks and comments
         line="${line#export }"                            # strip optional 'export '
-        [[ "$line" == *=* ]] && DOCKER_CMD="$DOCKER_CMD -e $line"
+        [[ "$line" == *=* ]] && DOCKER_ARGS+=("-e" "$line")
     done < "$ENV_FILE"
 else
     echo -e "${YELLOW}No .env file found${NC}"
@@ -93,21 +130,19 @@ fi
 
 echo ""
 
-# Volume: current directory
-DOCKER_CMD="$DOCKER_CMD -v $(pwd):/workspace"
-
-# Volume: persistent Claude state
-DOCKER_CMD="$DOCKER_CMD -v $VOLUME_NAME:/home/agent/.claude"
+# Volumes
+DOCKER_ARGS+=("-v" "$(pwd):/workspace")
+DOCKER_ARGS+=("-v" "$VOLUME_NAME:/home/agent/.claude")
 
 # Optional: host CLAUDE.md override (staged for entrypoint processing)
 if [ -f "$CLAUDE_HOME/CLAUDE.md" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/CLAUDE.md:/opt/host-config/CLAUDE.md:ro"
+    DOCKER_ARGS+=("-v" "$CLAUDE_HOME/CLAUDE.md:/opt/host-config/CLAUDE.md:ro")
     echo -e "${GREEN}Mounting host CLAUDE.md${NC}"
 fi
 
-# Optional: host settings.json override (mounted outside the volume for entrypoint processing)
+# Optional: host settings.json override
 if [ -f "$CLAUDE_HOME/settings.json" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/settings.json:/opt/host-config/settings.json:ro"
+    DOCKER_ARGS+=("-v" "$CLAUDE_HOME/settings.json:/opt/host-config/settings.json:ro")
     echo -e "${GREEN}Mounting host settings.json${NC}"
 fi
 
@@ -115,23 +150,23 @@ fi
 # entrypoint can copy them in (bind-mounting a file inside a named-volume
 # directory is unreliable; the volume wins).
 if [ -f "$CLAUDE_HOME/.credentials.json" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $CLAUDE_HOME/.credentials.json:/opt/host-config/.credentials.json:ro"
+    DOCKER_ARGS+=("-v" "$CLAUDE_HOME/.credentials.json:/opt/host-config/.credentials.json:ro")
     echo -e "${GREEN}Mounting host credentials${NC}"
 fi
 
 # Optional: git config
 if [ -f "$HOME/.gitconfig" ]; then
-    DOCKER_CMD="$DOCKER_CMD -v $HOME/.gitconfig:/home/agent/.gitconfig:ro"
+    DOCKER_ARGS+=("-v" "$HOME/.gitconfig:/home/agent/.gitconfig:ro")
 fi
 
-[ -n "$SKILL_PROFILES" ] && DOCKER_CMD="$DOCKER_CMD -e SKILL_PROFILES=$SKILL_PROFILES"
+[ -n "$SKILL_PROFILES" ] && DOCKER_ARGS+=("-e" "SKILL_PROFILES=$SKILL_PROFILES")
+DOCKER_ARGS+=("-e" "HOST_UID=$(id -u)" "-e" "HOST_GID=$(id -g)")
+DOCKER_ARGS+=("-w" "/workspace")
+DOCKER_ARGS+=("$IMAGE_NAME")
 
-DOCKER_CMD="$DOCKER_CMD -w /workspace"
-DOCKER_CMD="$DOCKER_CMD $IMAGE_NAME"
-
-# Pass through any arguments
+# Pass through any remaining arguments
 if [ $# -gt 0 ]; then
-    DOCKER_CMD="$DOCKER_CMD $@"
+    DOCKER_ARGS+=("$@")
 fi
 
 echo ""
@@ -147,4 +182,4 @@ echo "Type 'exit' to leave the container"
 echo "===================================="
 echo ""
 
-eval $DOCKER_CMD
+"${DOCKER_ARGS[@]}"

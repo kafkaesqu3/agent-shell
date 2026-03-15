@@ -7,15 +7,64 @@ $ImageName = "ai-agent:latest"
 $VolumeName = "ai-agent-claude"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# Parse --env flag (must be first arg)
+# Parse flags
 $EnvFile = $null
-$PassArgs = $args
-if ($args.Count -ge 2 -and $args[0] -eq "--env") {
-    $EnvFile = $args[1]
-    $PassArgs = $args[2..($args.Count - 1)]
-} elseif ($args.Count -ge 1 -and $args[0] -match '^--env=(.+)$') {
-    $EnvFile = $matches[1]
-    $PassArgs = $args[1..($args.Count - 1)]
+$ContainerName = $null
+$SkillProfiles = $null
+$UseRm = $false
+$i = 0
+while ($i -lt $args.Count) {
+    $arg = $args[$i]
+    if ($arg -eq "--env" -and ($i + 1) -lt $args.Count) {
+        $EnvFile = $args[$i + 1]; $i += 2
+    } elseif ($arg -match '^--env=(.+)$') {
+        $EnvFile = $matches[1]; $i++
+    } elseif ($arg -eq "--name" -and ($i + 1) -lt $args.Count) {
+        $ContainerName = $args[$i + 1]; $i += 2
+    } elseif ($arg -match '^--name=(.+)$') {
+        $ContainerName = $matches[1]; $i++
+    } elseif ($arg -eq "--skills" -and ($i + 1) -lt $args.Count) {
+        $SkillProfiles = $args[$i + 1]; $i += 2
+    } elseif ($arg -match '^--skills=(.+)$') {
+        $SkillProfiles = $matches[1]; $i++
+    } elseif ($arg -eq "--rm") {
+        $UseRm = $true; $i++
+    } elseif ($arg -eq "--lite") {
+        $ImageName = "ai-agent:lite"; $i++
+    } elseif ($arg -eq "--browsing") {
+        $ImageName = "ai-agent:browsing"; $i++
+    } else {
+        break
+    }
+}
+$PassArgs = if ($i -lt $args.Count) { $args[$i..($args.Count - 1)] } else { @() }
+
+# Handle subcommands
+if ($PassArgs.Count -gt 0 -and $PassArgs[0] -eq "sync") {
+    if (-not $ContainerName) {
+        $ContainerName = (Get-Location | Split-Path -Leaf)
+    }
+    try {
+        docker info 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "not running" }
+    } catch {
+        Write-Host "Docker is not running!" -ForegroundColor Red; exit 1
+    }
+    $null = New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude\projects"
+    $running = docker ps --format '{{.Names}}' 2>$null | Where-Object { $_ -eq $ContainerName }
+    $stopped = docker ps -a --format '{{.Names}}' 2>$null | Where-Object { $_ -eq $ContainerName }
+    if ($running) {
+        Write-Host "Syncing from running container: $ContainerName" -ForegroundColor Cyan
+    } elseif ($stopped) {
+        Write-Host "Syncing from stopped container: $ContainerName" -ForegroundColor Cyan
+    } else {
+        Write-Host "Container not found: $ContainerName" -ForegroundColor Red
+        Write-Host "Specify with --name, or run from the project directory"
+        exit 1
+    }
+    docker cp "${ContainerName}:/home/agent/.claude/projects/." "$env:USERPROFILE\.claude\projects\" 2>$null
+    Write-Host "Session logs synced to ~\.claude\projects\" -ForegroundColor Green
+    exit 0
 }
 
 # Resolve .env file: --env flag > .env in current dir > .env in script dir > ~/.config/ai-agent/.env
@@ -45,7 +94,16 @@ try {
 Write-Host "Docker is running" -ForegroundColor Green
 
 # Build docker args
-$DockerArgs = @("run", "-it", "--rm")
+$DockerArgs = @("run", "-it")
+if ($UseRm) {
+    $DockerArgs += "--rm"
+} else {
+    if (-not $ContainerName) {
+        $ContainerName = (Get-Location | Split-Path -Leaf)
+    }
+    $DockerArgs += "--name"
+    $DockerArgs += $ContainerName
+}
 
 # Load .env and pass vars
 if ($EnvFile -and (Test-Path $EnvFile)) {
@@ -53,12 +111,10 @@ if ($EnvFile -and (Test-Path $EnvFile)) {
     Get-Content $EnvFile | ForEach-Object {
         $line = $_.Trim()
         if ($line -and -not $line.StartsWith('#')) {
-            if ($line -match '^([^=]+)=(.*)$') {
-                $key = $matches[1]
-                $value = $matches[2]
+            $line = $line -replace '^export\s+', ''
+            if ($line -match '^[^=]+=') {
                 $DockerArgs += "-e"
-                $DockerArgs += $key
-                [Environment]::SetEnvironmentVariable($key, $value, 'Process')
+                $DockerArgs += $line
             }
         }
     }
@@ -74,51 +130,52 @@ if ($EnvFile -and (Test-Path $EnvFile)) {
 
 Write-Host ""
 
-# Volume: current directory
+# Volumes
 $CurrentDir = (Get-Location).Path
-$DockerArgs += "-v"
-$DockerArgs += "${CurrentDir}:/workspace"
+$DockerArgs += "-v"; $DockerArgs += "${CurrentDir}:/workspace"
+$DockerArgs += "-v"; $DockerArgs += "${VolumeName}:/home/agent/.claude"
 
-# Volume: persistent Claude state
-$DockerArgs += "-v"
-$DockerArgs += "${VolumeName}:/home/agent/.claude"
-
-# Optional: host CLAUDE.md override
+# Optional: host CLAUDE.md override (staged for entrypoint processing)
 $ClaudeMd = Join-Path $ClaudeHome "CLAUDE.md"
 if (Test-Path $ClaudeMd) {
-    $DockerArgs += "-v"
-    $DockerArgs += "${ClaudeMd}:/home/agent/.claude/CLAUDE.md.host:ro"
+    $DockerArgs += "-v"; $DockerArgs += "${ClaudeMd}:/opt/host-config/CLAUDE.md:ro"
     Write-Host "Mounting host CLAUDE.md" -ForegroundColor Green
 }
 
-# Optional: host settings.json override
+# Optional: host settings.json override (staged for entrypoint processing)
 $ClaudeSettings = Join-Path $ClaudeHome "settings.json"
 if (Test-Path $ClaudeSettings) {
-    $DockerArgs += "-v"
-    $DockerArgs += "${ClaudeSettings}:/home/agent/.claude/settings.json.host:ro"
+    $DockerArgs += "-v"; $DockerArgs += "${ClaudeSettings}:/opt/host-config/settings.json:ro"
     Write-Host "Mounting host settings.json" -ForegroundColor Green
 }
 
-# Optional: host credentials
+# Optional: host credentials — staged outside the named volume so the
+# entrypoint can copy them in (bind-mounting a file inside a named-volume
+# directory is unreliable; the volume wins).
 $ClaudeCreds = Join-Path $ClaudeHome ".credentials.json"
 if (Test-Path $ClaudeCreds) {
-    $DockerArgs += "-v"
-    $DockerArgs += "${ClaudeCreds}:/home/agent/.claude/.credentials.json:ro"
+    $DockerArgs += "-v"; $DockerArgs += "${ClaudeCreds}:/opt/host-config/.credentials.json:ro"
     Write-Host "Mounting host credentials" -ForegroundColor Green
 }
 
 # Optional: git config
 $GitConfig = Join-Path $env:USERPROFILE ".gitconfig"
 if (Test-Path $GitConfig) {
-    $DockerArgs += "-v"
-    $DockerArgs += "${GitConfig}:/root/.gitconfig:ro"
+    $DockerArgs += "-v"; $DockerArgs += "${GitConfig}:/home/agent/.gitconfig:ro"
 }
 
-$DockerArgs += "-w"
-$DockerArgs += "/workspace"
+if ($SkillProfiles) {
+    $DockerArgs += "-e"; $DockerArgs += "SKILL_PROFILES=$SkillProfiles"
+}
+
+# Pass host UID/GID so the entrypoint can remap the agent user and avoid
+# corrupting bind-mounted workspace ownership. On Windows/WSL2, Docker Desktop
+# handles UID mapping internally, so we use 1000 as the conventional WSL default.
+$DockerArgs += "-e"; $DockerArgs += "HOST_UID=1000"
+$DockerArgs += "-e"; $DockerArgs += "HOST_GID=1000"
+$DockerArgs += "-w"; $DockerArgs += "/workspace"
 $DockerArgs += $ImageName
 
-# Pass through arguments (excluding --env flag already parsed)
 if ($PassArgs.Count -gt 0) {
     $DockerArgs += $PassArgs
 }

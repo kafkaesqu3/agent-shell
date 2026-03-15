@@ -77,9 +77,9 @@ install_path() {
   echo -e "   ${YELLOW}Add these lines if not already present:${NC}"
   echo ""
   cat << 'SHELLFUNC'
-# nvm
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+# fnm (Node.js version manager)
+export PATH="$HOME/.local/share/fnm:$PATH"
+eval "$(fnm env 2>/dev/null)" || true
 
 # claude: runs in Docker by default; use --host to run directly on this machine
 #         use --yolo to enable --dangerously-skip-permissions

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install_tools: install nvm, Node.js, Claude Code, and OS-specific dev tools
+# install_tools: install fnm, Node.js, Claude Code, and OS-specific dev tools
 set -euo pipefail
 # shellcheck source=install/common.sh
 [[ -z "${SCRIPT_DIR:-}" ]] && source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/install/common.sh"
@@ -30,7 +30,7 @@ _install_macos() {
     info "Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   fi
-  brew install ripgrep fd-find shellcheck shfmt jq actionlint
+  brew install ripgrep fd shellcheck shfmt jq actionlint fzf tmux zsh
   if ! cmd_exists node; then brew install node@22; fi
   if ! cmd_exists cargo; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -47,6 +47,7 @@ _install_ubuntu() {
   sudo apt-get install -y \
     curl git build-essential \
     ripgrep fd-find shellcheck shfmt jq \
+    fzf tmux zsh \
     python3-full python3-pip
   if ! cmd_exists cargo; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -61,6 +62,7 @@ _install_fedora() {
   info "Installing Fedora/RHEL dependencies..."
   sudo dnf groupinstall -y "Development Tools"
   sudo dnf install -y ripgrep fd shellcheck shfmt jq \
+    fzf tmux zsh \
     python3 python3-devel openssl-devel
   if ! cmd_exists cargo; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -76,6 +78,7 @@ _install_arch() {
   sudo pacman -Syu
   sudo pacman -S --noconfirm \
     ripgrep fd shellcheck shfmt jq \
+    fzf tmux zsh \
     python python-pip rust base-devel
   if ! cmd_exists uv; then curl -LsSf https://astral.sh/uv/install.sh | sh; fi
   _install_cargo_tools
@@ -112,27 +115,33 @@ _install_claude_plugins() {
 install_tools() {
   echo -e "${BOLD}--- Installing Tools ---${NC}"
 
-  # nvm + Node.js
-  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-  if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-    info "Installing nvm..."
-    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-    # shellcheck source=/dev/null
-    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-    ok "nvm installed"
+  # fnm + Node.js 22 LTS
+  FNM_BIN="${HOME}/.local/share/fnm"
+  if ! cmd_exists fnm && [ ! -x "${FNM_BIN}/fnm" ]; then
+    info "Installing fnm..."
+    curl -fsSL https://fnm.vercel.app/install | bash
+    ok "fnm installed"
   else
-    # shellcheck source=/dev/null
-    \. "$NVM_DIR/nvm.sh"
-    ok "nvm already installed ($(nvm --version))"
+    ok "fnm already installed"
   fi
+  export PATH="${FNM_BIN}:${PATH}"
+  # shellcheck disable=SC1090
+  eval "$(fnm env 2>/dev/null)" || true
 
-  if ! nvm ls 22 &>/dev/null; then
-    info "Installing Node.js 22 via nvm..."
-    nvm install 22
+  if ! fnm ls 2>/dev/null | grep -q "v22"; then
+    info "Installing Node.js 22 via fnm..."
+    fnm install 22
   fi
-  nvm use 22
-  nvm alias default 22
+  fnm default 22
+  eval "$(fnm env)"
   ok "Node.js $(node --version)"
+
+  # ast-grep (AST-aware code search, binary: sg)
+  if npm install -g @ast-grep/cli 2>/dev/null; then
+    ok "ast-grep installed"
+  else
+    warn "ast-grep skipped"
+  fi
 
   # Claude Code (official installer)
   info "Installing Claude Code..."

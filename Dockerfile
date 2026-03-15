@@ -1,37 +1,134 @@
 ###############################################################################
-# Stage 1: base
+# Stage 1: lite — Claude Code only, minimal dependencies, fast build
 ###############################################################################
-FROM ubuntu:24.04 AS base
+FROM ubuntu:24.04 AS lite
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies + Python (built into Ubuntu 24.04)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
+    zsh \
     git \
     curl \
     wget \
     ca-certificates \
     gnupg \
     gosu \
-    python3 \
-    python3-venv \
     sudo \
     vim \
     jq \
+    unzip \
+    fzf \
+    fd-find \
+    ripgrep \
+    tmux \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 22 LTS via fnm (Fast Node Manager)
+ARG FNM_VERSION="1.39.0"
+ENV FNM_DIR=/opt/fnm
+ENV PATH="/opt/fnm:/opt/fnm/aliases/default/bin:${PATH}"
+RUN curl -fsSL "https://github.com/Schniz/fnm/releases/download/v${FNM_VERSION}/fnm-linux.zip" \
+    -o /tmp/fnm.zip \
+    && unzip -q /tmp/fnm.zip fnm -d /opt/fnm \
+    && rm /tmp/fnm.zip \
+    && chmod +x /opt/fnm/fnm \
+    && fnm install 22 \
+    && fnm default 22
+
+# npm supply-chain hardening: exact versions, publish-age delay, no postinstall scripts
+ENV NPM_CONFIG_SAVE_EXACT=true \
+    NPM_CONFIG_MINIMUM_RELEASE_AGE=1440 \
+    NPM_CONFIG_AUDIT=true \
+    NPM_CONFIG_IGNORE_SCRIPTS=true
+
+# Install Claude Code via official installer
+RUN curl -fsSL https://claude.ai/install.sh | bash \
+    && cp /root/.local/bin/claude /usr/local/bin/claude-real
+
+# Install ast-grep (AST-aware code search, binary installed as 'sg')
+RUN npm install -g @ast-grep/cli
+
+# Wrap claude with --yolo → --dangerously-skip-permissions alias
+COPY claude-config/claude-container-wrapper.sh /usr/local/bin/claude
+RUN sed -i 's/\r//' /usr/local/bin/claude && chmod +x /usr/local/bin/claude
+
+ENV SHELL=/bin/zsh
+
+# Create non-root user with passwordless sudo
+RUN useradd -m -s /bin/zsh agent \
+    && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
+    && chmod 0440 /etc/sudoers.d/agent
+
+# Create config directories owned by agent
+RUN mkdir -p /home/agent/.claude \
+    && mkdir -p /home/agent/.config/claude \
+    && mkdir -p /workspace \
+    && chown -R agent:agent /home/agent /workspace
+
+# Pre-install Claude Code plugins as agent user (baked into image; named volume inherits on first run)
+# Individual failures are non-fatal — marketplace availability can be transient
+RUN su -s /bin/bash agent -c ' \
+    HOME=/home/agent; \
+    for plugin in \
+      superpowers@claude-plugins-official \
+      commit-commands@claude-plugins-official \
+      hookify@claude-plugins-official \
+      context7@claude-plugins-official \
+      frontend-design@claude-plugins-official \
+      claude-code-setup@claude-plugins-official \
+      claude-md-management@claude-plugins-official \
+      security-guidance@claude-plugins-official \
+      code-review@claude-plugins-official; do \
+      claude plugin install "$plugin" || echo "WARN: failed to install $plugin (skipped)"; \
+    done \
+  '
+
+# Shell and tmux config
+COPY claude-config/zshrc  /home/agent/.zshrc
+COPY claude-config/tmux.conf /home/agent/.tmux.conf
+RUN chown agent:agent /home/agent/.zshrc /home/agent/.tmux.conf
+
+# Copy config files and entrypoint
+COPY claude-config/ /opt/claude-config/
+COPY entrypoint.sh /opt/entrypoint.sh
+# Strip Windows CRLF line endings so shebangs work on Linux
+RUN find /opt/claude-config -name "*.sh" -exec sed -i 's/\r//' {} + \
+    && sed -i 's/\r//' /opt/entrypoint.sh \
+    && chmod +x /opt/entrypoint.sh /opt/claude-config/hooks/*.sh 2>/dev/null || true
+
+WORKDIR /workspace
+
+ENTRYPOINT ["/opt/entrypoint.sh"]
+CMD ["zsh"]
+
+###############################################################################
+# Stage 2: base — full dev environment (Go, GitHub CLI, MCP servers, AI tools)
+###############################################################################
+FROM lite AS base
+
+# Additional system packages for dev tooling and diagnostics
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-venv \
     iputils-ping \
     dnsutils \
     iproute2 \
     net-tools \
+    git-delta \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22 LTS via nodesource
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
+# Default git config with delta pager (active when no host gitconfig is bind-mounted)
+COPY claude-config/gitconfig /home/agent/.gitconfig
+RUN chown agent:agent /home/agent/.gitconfig
+# GIT_PAGER ensures delta is used as pager even when host gitconfig is mounted
+ENV GIT_PAGER=delta
 
-# Install Go 1.23.5
-RUN curl -fsSL https://go.dev/dl/go1.23.5.linux-amd64.tar.gz -o go.tar.gz \
+# Install Go (pinned with SHA256)
+ARG GO_VERSION="1.26.1"
+ARG GO_SHA256="031f088e5d955bab8657ede27ad4e3bc5b7c1ba281f05f245bcc304f327c987a"
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o go.tar.gz \
+    && echo "${GO_SHA256}  go.tar.gz" | sha256sum --check \
     && tar -C /usr/local -xzf go.tar.gz \
     && rm go.tar.gz
 ENV GOPATH=/usr/local
@@ -46,14 +143,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Claude Code via official installer (npm method is deprecated)
-RUN curl -fsSL https://claude.ai/install.sh | bash \
-    && cp /root/.local/bin/claude /usr/local/bin/claude-real
-
-# Wrap claude with --yolo → --dangerously-skip-permissions alias
-COPY claude-config/claude-container-wrapper.sh /usr/local/bin/claude
-RUN sed -i 's/\r//' /usr/local/bin/claude && chmod +x /usr/local/bin/claude
 
 # Install Node.js AI tools
 RUN npm install -g \
@@ -86,57 +175,19 @@ RUN pip install --no-cache-dir \
     mcp-server-fetch
 
 # Install Fabric (AI patterns framework)
-RUN go install github.com/danielmiessler/fabric/cmd/fabric@latest
+RUN go install github.com/danielmiessler/fabric/cmd/fabric@v1.4.434
 
 # Install gopls (required by gopls-lsp Claude plugin)
-RUN go install golang.org/x/tools/gopls@latest
+RUN go install golang.org/x/tools/gopls@v0.21.1
 
-# Set up environment
-ENV SHELL=/bin/bash
-
-# Create non-root user with passwordless sudo
-RUN useradd -m -s /bin/bash agent \
-    && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
-    && chmod 0440 /etc/sudoers.d/agent
-
-# Create config directories owned by agent
-RUN mkdir -p /home/agent/.claude \
-    && mkdir -p /home/agent/.config/claude \
-    && mkdir -p /home/agent/.config/fabric \
+# Additional config dirs for tools added in this stage
+RUN mkdir -p /home/agent/.config/fabric \
     && mkdir -p /home/agent/.config/gemini \
     && mkdir -p /home/agent/.aider \
-    && mkdir -p /workspace \
-    && chown -R agent:agent /home/agent /workspace
-
-# Pre-install Claude Code plugins as agent user (baked into image; named volume inherits on first run)
-RUN su -s /bin/bash agent -c ' \
-    HOME=/home/agent \
-    claude plugin install superpowers@claude-plugins-official && \
-    claude plugin install commit-commands@claude-plugins-official && \
-    claude plugin install hookify@claude-plugins-official && \
-    claude plugin install context7@claude-plugins-official && \
-    claude plugin install frontend-design@claude-plugins-official && \
-    claude plugin install claude-code-setup@claude-plugins-official && \
-    claude plugin install claude-md-management@claude-plugins-official && \
-    claude plugin install security-guidance@claude-plugins-official && \
-    claude plugin install code-review@claude-plugins-official \
-  '
-
-# Copy config files and entrypoint
-COPY claude-config/ /opt/claude-config/
-COPY entrypoint.sh /opt/entrypoint.sh
-# Strip Windows CRLF line endings so shebangs work on Linux
-RUN find /opt/claude-config -name "*.sh" -exec sed -i 's/\r//' {} + \
-    && sed -i 's/\r//' /opt/entrypoint.sh \
-    && chmod +x /opt/entrypoint.sh /opt/claude-config/hooks/*.sh 2>/dev/null || true
-
-WORKDIR /workspace
-
-ENTRYPOINT ["/opt/entrypoint.sh"]
-CMD ["bash"]
+    && chown -R agent:agent /home/agent
 
 ###############################################################################
-# Stage 2: browsing
+# Stage 3: browsing — adds Chromium and browser MCP servers
 ###############################################################################
 FROM base AS browsing
 

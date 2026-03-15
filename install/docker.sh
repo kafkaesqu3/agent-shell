@@ -16,18 +16,46 @@ install_docker() {
     return 1
   fi
 
-  info "Building ai-agent:latest (base)..."
-  docker build -t ai-agent:latest --target base "$SCRIPT_DIR"
-  ok "ai-agent:latest built"
+  echo "Select which image(s) to build:"
+  echo "  1) lite     — Claude Code only (fast build)"
+  echo "  2) base     — Full dev environment (Go, MCP servers, AI tools) [default]"
+  echo "  3) browsing — Full environment + Chromium (~2x larger)"
+  echo "  4) all      — All three"
+  echo ""
+  read -rp "Choice [1/2/3/4, default=2]: " -n 1 choice
+  echo ""
+  choice="${choice:-2}"
 
-  echo ""
-  read -rp "Also build browsing variant (Chromium, ~2x larger)? [y/N] " -n 1
-  echo ""
-  if [[ ${REPLY:-n} =~ ^[Yy]$ ]]; then
-    info "Building ai-agent-browsing:latest..."
-    docker build -t ai-agent-browsing:latest --target browsing "$SCRIPT_DIR"
-    ok "ai-agent-browsing:latest built"
-  fi
+  case "$choice" in
+    1)
+      info "Building ai-agent:lite..."
+      docker build -t ai-agent:lite --target lite "$SCRIPT_DIR"
+      ok "ai-agent:lite built"
+      ;;
+    3)
+      info "Building ai-agent:browsing (includes full base)..."
+      docker build -t ai-agent:browsing --target browsing "$SCRIPT_DIR"
+      ok "ai-agent:browsing built"
+      ;;
+    4)
+      info "Building ai-agent:lite..."
+      docker build -t ai-agent:lite --target lite "$SCRIPT_DIR"
+      ok "ai-agent:lite built"
+
+      info "Building ai-agent:latest (base)..."
+      docker build -t ai-agent:latest --target base "$SCRIPT_DIR"
+      ok "ai-agent:latest built"
+
+      info "Building ai-agent:browsing..."
+      docker build -t ai-agent:browsing --target browsing "$SCRIPT_DIR"
+      ok "ai-agent:browsing built"
+      ;;
+    *)
+      info "Building ai-agent:latest (base)..."
+      docker build -t ai-agent:latest --target base "$SCRIPT_DIR"
+      ok "ai-agent:latest built"
+      ;;
+  esac
 
   echo ""
 }

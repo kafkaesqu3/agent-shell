@@ -39,6 +39,8 @@
       "Bash(git reset --hard*)",
       "Edit(~/.bashrc)",
       "Edit(~/.zshrc)",
+      "Write(~/.bashrc)",
+      "Write(~/.zshrc)",
       "Edit(~/.ssh/**)",
       "Read(~/.ssh/**)",
       "Read(~/.gnupg/**)",
@@ -57,7 +59,8 @@
       "Read(~/Library/Application Support/**/electrum*/**)",
       "Read(~/Library/Application Support/**/exodus*/**)",
       "Read(~/Library/Application Support/**/phantom*/**)",
-      "Read(~/Library/Application Support/**/solflare*/**)"
+      "Read(~/Library/Application Support/**/solflare*/**)",
+      "Read(/opt/claude-config/**)"
     ]
   },
   "hooks": {
