@@ -15,13 +15,47 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+usage() {
+    cat <<EOF
+Usage: ai-agent.sh [OPTIONS] [SUBCOMMAND]
+
+Launch an AI agent Docker container with the current directory mounted as /workspace.
+
+Options:
+  --env <path>        Path to .env file (default: auto-detected)
+  --name <name>       Container name (default: current directory name)
+  --skills <profiles> Comma-separated skill profiles to activate
+  --rm                Remove container on exit (ephemeral mode)
+  --lite              Use ai-agent:lite image (Claude Code only)
+  --browsing          Use ai-agent:browsing image (base + Chromium)
+  -h, --help          Show this help message
+
+Subcommands:
+  sync                Copy session logs from container to ~/.claude/projects/
+
+.env resolution order:
+  1. --env flag
+  2. .env in current directory
+  3. .env in script directory
+  4. ~/.config/ai-agent/.env
+
+Examples:
+  ai-agent.sh                        # launch with auto-detected .env
+  ai-agent.sh --env ~/.env.work      # use specific env file
+  ai-agent.sh --browsing --rm        # ephemeral browsing container
+  ai-agent.sh --name myproject sync  # sync logs from named container
+EOF
+}
+
 # Parse flags
 ENV_FILE=""
 CONTAINER_NAME=""
 SKILL_PROFILES=""
 USE_RM=false
 while true; do
-    if [[ "$1" == "--env" && -n "$2" ]]; then
+    if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+        usage; exit 0
+    elif [[ "$1" == "--env" && -n "$2" ]]; then
         ENV_FILE="$2"
         shift 2
     elif [[ "$1" == --env=* ]]; then

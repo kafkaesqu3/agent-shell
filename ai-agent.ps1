@@ -7,6 +7,38 @@ $ImageName = "ai-agent:latest"
 $VolumeName = "ai-agent-claude"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+function Show-Usage {
+    Write-Host @"
+Usage: ai-agent.ps1 [OPTIONS] [SUBCOMMAND]
+
+Launch an AI agent Docker container with the current directory mounted as /workspace.
+
+Options:
+  --env <path>        Path to .env file (default: auto-detected)
+  --name <name>       Container name (default: current directory name)
+  --skills <profiles> Comma-separated skill profiles to activate
+  --rm                Remove container on exit (ephemeral mode)
+  --lite              Use ai-agent:lite image (Claude Code only)
+  --browsing          Use ai-agent:browsing image (base + Chromium)
+  -h, --help          Show this help message
+
+Subcommands:
+  sync                Copy session logs from container to ~\.claude\projects\
+
+.env resolution order:
+  1. --env flag
+  2. .env in current directory
+  3. .env in script directory
+  4. ~\.config\ai-agent\.env
+
+Examples:
+  .\ai-agent.ps1                           # launch with auto-detected .env
+  .\ai-agent.ps1 --env ~\.env.work         # use specific env file
+  .\ai-agent.ps1 --browsing --rm           # ephemeral browsing container
+  .\ai-agent.ps1 --name myproject sync     # sync logs from named container
+"@
+}
+
 # Parse flags
 $EnvFile = $null
 $ContainerName = $null
@@ -15,7 +47,9 @@ $UseRm = $false
 $i = 0
 while ($i -lt $args.Count) {
     $arg = $args[$i]
-    if ($arg -eq "--env" -and ($i + 1) -lt $args.Count) {
+    if ($arg -eq "-h" -or $arg -eq "--help") {
+        Show-Usage; exit 0
+    } elseif ($arg -eq "--env" -and ($i + 1) -lt $args.Count) {
         $EnvFile = $args[$i + 1]; $i += 2
     } elseif ($arg -match '^--env=(.+)$') {
         $EnvFile = $matches[1]; $i++
