@@ -70,8 +70,9 @@ RUN mkdir -p /home/agent/.claude \
 # Individual failures are non-fatal — marketplace availability can be transient
 RUN su -s /bin/bash agent -c ' \
     HOME=/home/agent; \
+    claude plugin marketplace add obra/superpowers-marketplace || echo "WARN: failed to add superpowers-marketplace (skipped)"; \
     for plugin in \
-      superpowers@claude-plugins-official \
+      superpowers@superpowers-marketplace \
       commit-commands@claude-plugins-official \
       hookify@claude-plugins-official \
       context7@claude-plugins-official \

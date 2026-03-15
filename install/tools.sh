@@ -90,8 +90,11 @@ _install_claude_plugins() {
   if ! cmd_exists claude; then warn "Claude Code not found — skipping plugins"; return; fi
 
   info "Installing Claude Code plugins..."
+  claude plugin marketplace add obra/superpowers-marketplace 2>/dev/null \
+    && ok "  superpowers-marketplace added" \
+    || warn "  superpowers-marketplace (skipped)"
   local plugins=(
-    "superpowers@claude-plugins-official"
+    "superpowers@superpowers-marketplace"
     "commit-commands@claude-plugins-official"
     "hookify@claude-plugins-official"
     "context7@claude-plugins-official"

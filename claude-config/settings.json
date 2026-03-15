@@ -13,7 +13,7 @@
   "enableAllProjectMcpServers": false,
   "alwaysThinkingEnabled": true,
   "enabledPlugins": {
-    "superpowers@claude-plugins-official": true,
+    "superpowers@superpowers-marketplace": true,
     "commit-commands@claude-plugins-official": true,
     "hookify@claude-plugins-official": true,
     "context7@claude-plugins-official": true,
