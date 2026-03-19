@@ -58,7 +58,10 @@ ENV SHELL=/bin/zsh
 # Create non-root user with passwordless sudo
 RUN useradd -m -s /bin/zsh agent \
     && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
-    && chmod 0440 /etc/sudoers.d/agent
+    && chmod 0440 /etc/sudoers.d/agent \
+    && mkdir -p /home/agent/.local/bin \
+    && ln -s /usr/local/bin/claude-real /home/agent/.local/bin/claude \
+    && chown -R agent:agent /home/agent/.local
 
 # Create config directories owned by agent
 RUN mkdir -p /home/agent/.claude \
