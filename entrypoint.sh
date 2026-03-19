@@ -76,7 +76,7 @@ fi
 # --- Patch MCP env var placeholders in settings.json ---
 # Only needed for values embedded in URLs/strings (not MCP server env blocks,
 # which inherit the container environment directly).
-if [ -n "$BRIGHTDATA_API_KEY" ]; then
+if [ -n "${BRIGHTDATA_API_KEY:-}" ]; then
   sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" /home/agent/.claude/settings.json
 fi
 
@@ -103,11 +103,20 @@ fi
 # Claude Code shows an interactive wizard on first run if ~/.claude.json has no
 # hasCompletedOnboarding flag. When a token is available, seed the flag and run
 # a throwaway prompt once so the container starts non-interactively every time.
-if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+#
+# Token source priority:
+#   1. CLAUDE_CODE_OAUTH_TOKEN env var (headless/CI)
+#   2. Host credentials file (mounted via ai-agent.sh/.ps1)
+_BYPASS_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+if [ -z "$_BYPASS_TOKEN" ] && [ -f /opt/host-config/.credentials.json ]; then
+  _BYPASS_TOKEN=$(jq -r '.claudeAiOauth.accessToken // empty' /opt/host-config/.credentials.json 2>/dev/null || true)
+fi
+
+if [ -n "$_BYPASS_TOKEN" ]; then
   ONBOARDING_DONE=$(jq -r '.hasCompletedOnboarding // false' "$CLAUDE_JSON" 2>/dev/null || echo "false")
   if [ "$ONBOARDING_DONE" != "true" ]; then
     tmp=$(mktemp)
-    jq --arg tok "$CLAUDE_CODE_OAUTH_TOKEN" \
+    jq --arg tok "$_BYPASS_TOKEN" \
       '.oauthAccount.accessToken = $tok | .hasCompletedOnboarding = true' \
       "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
     chown agent:agent "$CLAUDE_JSON"

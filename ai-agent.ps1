@@ -1,5 +1,11 @@
 # AI Agent Container Launcher (PowerShell)
 # Maps current directory to /workspace and runs with layered Claude Code config
+param(
+    [Alias('h')]
+    [switch]$Help,
+    [Parameter(ValueFromRemainingArguments)]
+    [string[]]$PassedArgs = @()
+)
 
 # Configuration
 $ClaudeHome = "$env:USERPROFILE\.claude"
@@ -20,6 +26,8 @@ Options:
   --rm                Remove container on exit (ephemeral mode)
   --lite              Use ai-agent:lite image (Claude Code only)
   --browsing          Use ai-agent:browsing image (base + Chromium)
+  --work               Load .env.work profile (Databricks / work credentials)
+  --local [MODEL]      Load .env.local profile; optionally set CLAUDE_MODEL=MODEL
   -h, --help          Show this help message
 
 Subcommands:
@@ -39,26 +47,31 @@ Examples:
 "@
 }
 
-# Parse flags
+# Handle help flag (also caught by param() -Help alias, but guard here too)
+if ($Help) { Show-Usage; exit 0 }
+
+# Parse remaining flags
 $EnvFile = $null
 $ContainerName = $null
 $SkillProfiles = $null
 $UseRm = $false
+$ProfileName = ""
+$ClaudeModel = ""
 $i = 0
-while ($i -lt $args.Count) {
-    $arg = $args[$i]
-    if ($arg -eq "-h" -or $arg -eq "--help") {
+while ($i -lt $PassedArgs.Count) {
+    $arg = $PassedArgs[$i]
+    if ($arg -eq "--help") {
         Show-Usage; exit 0
-    } elseif ($arg -eq "--env" -and ($i + 1) -lt $args.Count) {
-        $EnvFile = $args[$i + 1]; $i += 2
+    } elseif ($arg -eq "--env" -and ($i + 1) -lt $PassedArgs.Count) {
+        $EnvFile = $PassedArgs[$i + 1]; $i += 2
     } elseif ($arg -match '^--env=(.+)$') {
         $EnvFile = $matches[1]; $i++
-    } elseif ($arg -eq "--name" -and ($i + 1) -lt $args.Count) {
-        $ContainerName = $args[$i + 1]; $i += 2
+    } elseif ($arg -eq "--name" -and ($i + 1) -lt $PassedArgs.Count) {
+        $ContainerName = $PassedArgs[$i + 1]; $i += 2
     } elseif ($arg -match '^--name=(.+)$') {
         $ContainerName = $matches[1]; $i++
-    } elseif ($arg -eq "--skills" -and ($i + 1) -lt $args.Count) {
-        $SkillProfiles = $args[$i + 1]; $i += 2
+    } elseif ($arg -eq "--skills" -and ($i + 1) -lt $PassedArgs.Count) {
+        $SkillProfiles = $PassedArgs[$i + 1]; $i += 2
     } elseif ($arg -match '^--skills=(.+)$') {
         $SkillProfiles = $matches[1]; $i++
     } elseif ($arg -eq "--rm") {
@@ -67,11 +80,19 @@ while ($i -lt $args.Count) {
         $ImageName = "ai-agent:lite"; $i++
     } elseif ($arg -eq "--browsing") {
         $ImageName = "ai-agent:browsing"; $i++
+    } elseif ($arg -eq "--work") {
+        $ProfileName = "work"; $i++
+    } elseif ($arg -eq "--local") {
+        $ProfileName = "local"
+        if ($i + 1 -lt $PassedArgs.Count -and -not $PassedArgs[$i + 1].StartsWith("--")) {
+            $ClaudeModel = $PassedArgs[$i + 1]; $i++
+        }
+        $i++
     } else {
         break
     }
 }
-$PassArgs = if ($i -lt $args.Count) { $args[$i..($args.Count - 1)] } else { @() }
+$PassArgs = if ($i -lt $PassedArgs.Count) { $PassedArgs[$i..($PassedArgs.Count - 1)] } else { @() }
 
 # Handle subcommands
 if ($PassArgs.Count -gt 0 -and $PassArgs[0] -eq "sync") {
@@ -112,6 +133,18 @@ if (-not $EnvFile) {
     }
 }
 
+# Resolve profile env file: CWD > script dir > ~/.config/ai-agent/
+$ProfileEnv = ""
+if ($ProfileName -ne "") {
+    foreach ($dir in @((Get-Location).Path, $ScriptDir, "$env:USERPROFILE\.config\ai-agent")) {
+        $candidate = Join-Path $dir ".env.$ProfileName"
+        if (Test-Path $candidate) { $ProfileEnv = $candidate; break }
+    }
+    if ($ProfileEnv -eq "") {
+        Write-Host "Warning: no .env.$ProfileName found (searched CWD, script dir, ~\.config\ai-agent\)" -ForegroundColor Yellow
+    }
+}
+
 Write-Host "AI Agent Container" -ForegroundColor Cyan
 Write-Host "Working directory: $(Get-Location)"
 Write-Host ""
@@ -131,12 +164,14 @@ Write-Host "Docker is running" -ForegroundColor Green
 $DockerArgs = @("run", "-it")
 if ($UseRm) {
     $DockerArgs += "--rm"
+    Write-Host "Mode: ephemeral (--rm)" -ForegroundColor Yellow
 } else {
     if (-not $ContainerName) {
         $ContainerName = (Get-Location | Split-Path -Leaf)
     }
     $DockerArgs += "--name"
     $DockerArgs += $ContainerName
+    Write-Host "Container name: $ContainerName" -ForegroundColor Cyan
 }
 
 # Load .env and pass vars
@@ -160,6 +195,20 @@ if ($EnvFile -and (Test-Path $EnvFile)) {
     Write-Host "    cp .env.claude .env      # Claude-only"
     Write-Host "    cp .env.full .env        # all AI tools"
     Write-Host "    cp .env.browsing .env    # browsing + search"
+}
+
+# Load profile env (overrides base vars)
+if ($ProfileEnv -ne "" -and (Test-Path $ProfileEnv)) {
+    Write-Host "Loading profile from: $ProfileEnv" -ForegroundColor Green
+    Get-Content $ProfileEnv | ForEach-Object {
+        $line = $_ -replace '^export\s+', ''
+        if ($line -match '^[A-Za-z_][A-Za-z0-9_]*=') {
+            $DockerArgs += "-e"; $DockerArgs += $line
+        }
+    }
+}
+if ($ClaudeModel -ne "") {
+    $DockerArgs += "-e"; $DockerArgs += "CLAUDE_MODEL=$ClaudeModel"
 }
 
 Write-Host ""

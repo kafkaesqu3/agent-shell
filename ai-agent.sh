@@ -28,6 +28,8 @@ Options:
   --rm                Remove container on exit (ephemeral mode)
   --lite              Use ai-agent:lite image (Claude Code only)
   --browsing          Use ai-agent:browsing image (base + Chromium)
+  --work               Load .env.work profile (Databricks / work credentials)
+  --local [MODEL]      Load .env.local profile; optionally set CLAUDE_MODEL=MODEL
   -h, --help          Show this help message
 
 Subcommands:
@@ -52,6 +54,8 @@ ENV_FILE=""
 CONTAINER_NAME=""
 SKILL_PROFILES=""
 USE_RM=false
+PROFILE=""
+CLAUDE_MODEL=""
 while true; do
     if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
         usage; exit 0
@@ -81,6 +85,16 @@ while true; do
         shift
     elif [[ "$1" == "--browsing" ]]; then
         IMAGE_NAME="ai-agent:browsing"
+        shift
+    elif [[ "$1" == "--work" ]]; then
+        PROFILE="work"
+        shift
+    elif [[ "$1" == "--local" ]]; then
+        PROFILE="local"
+        if [[ "${2:-}" != --* && -n "${2:-}" ]]; then
+            CLAUDE_MODEL="$2"
+            shift
+        fi
         shift
     else
         break
@@ -121,6 +135,20 @@ if [ -z "$ENV_FILE" ]; then
     fi
 fi
 
+# Resolve profile env file: CWD > script dir > ~/.config/ai-agent/
+PROFILE_ENV=""
+if [ -n "$PROFILE" ]; then
+    for dir in "$(pwd)" "$SCRIPT_DIR" "$HOME/.config/ai-agent"; do
+        if [ -f "$dir/.env.$PROFILE" ]; then
+            PROFILE_ENV="$dir/.env.$PROFILE"
+            break
+        fi
+    done
+    if [ -z "$PROFILE_ENV" ]; then
+        echo -e "${YELLOW}Warning: no .env.$PROFILE found (searched CWD, script dir, ~/.config/ai-agent/)${NC}"
+    fi
+fi
+
 echo -e "${BLUE}AI Agent Container${NC}"
 echo "Working directory: $(pwd)"
 echo ""
@@ -137,11 +165,13 @@ echo -e "${GREEN}Docker is running${NC}"
 DOCKER_ARGS=("docker" "run" "-it")
 if [ "$USE_RM" = true ]; then
     DOCKER_ARGS+=("--rm")
+    echo -e "${YELLOW}Mode: ephemeral (--rm)${NC}"
 else
     if [ -z "$CONTAINER_NAME" ]; then
         CONTAINER_NAME="$(basename "$(pwd)")"
     fi
     DOCKER_ARGS+=("--name" "$CONTAINER_NAME")
+    echo -e "${BLUE}Container name: $CONTAINER_NAME${NC}"
 fi
 
 # Parse .env and pass each var as -e KEY=VAL
@@ -161,6 +191,17 @@ else
     echo "    cp .env.full .env        # all AI tools"
     echo "    cp .env.browsing .env    # browsing + search"
 fi
+
+# Load profile env (overrides base vars)
+if [ -f "$PROFILE_ENV" ]; then
+    echo -e "${GREEN}Loading profile from: $PROFILE_ENV${NC}"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line#export }"
+        [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+        DOCKER_ARGS+=("-e" "$line")
+    done < "$PROFILE_ENV"
+fi
+[ -n "$CLAUDE_MODEL" ] && DOCKER_ARGS+=("-e" "CLAUDE_MODEL=$CLAUDE_MODEL")
 
 echo ""
 
@@ -194,7 +235,9 @@ if [ -f "$HOME/.gitconfig" ]; then
 fi
 
 [ -n "$SKILL_PROFILES" ] && DOCKER_ARGS+=("-e" "SKILL_PROFILES=$SKILL_PROFILES")
-DOCKER_ARGS+=("-e" "HOST_UID=$(id -u)" "-e" "HOST_GID=$(id -g)")
+# Use workspace directory owner's UID/GID so the remapped agent user can write
+# to /workspace even when the script runner differs from the directory owner.
+DOCKER_ARGS+=("-e" "HOST_UID=$(stat -c %u .)" "-e" "HOST_GID=$(stat -c %g .)")
 DOCKER_ARGS+=("-w" "/workspace")
 DOCKER_ARGS+=("$IMAGE_NAME")
 
