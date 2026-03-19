@@ -84,14 +84,30 @@ eval "$(fnm env 2>/dev/null)" || true
 # claude: runs in Docker by default; use --host to run directly on this machine
 #         use --yolo to enable --dangerously-skip-permissions
 claude() {
-  local -a _args=()
-  for _arg in "$@"; do
-    [[ "$_arg" == "--yolo" ]] && _args+=("--dangerously-skip-permissions") || _args+=("$_arg")
+  local -a _pre=() _args=()
+  local i=1
+  while [[ $i -le $# ]]; do
+    local _arg="${!i}"
+    case "$_arg" in
+      --yolo) _args+=("--dangerously-skip-permissions") ;;
+      --work) _pre+=("--work") ;;
+      --local)
+        _pre+=("--local")
+        local _ni=$(( i + 1 ))
+        local _next="${!_ni:-}"
+        if [[ -n "$_next" && "$_next" != --* ]]; then
+          _pre+=("$_next")
+          (( i++ ))
+        fi
+        ;;
+      *) _args+=("$_arg") ;;
+    esac
+    (( i++ ))
   done
   if [[ "${_args[0]:-}" == "--host" ]]; then
     command claude-host "${_args[@]:1}"
   else
-    ai-agent claude "${_args[@]+"${_args[@]}"}"
+    ai-agent "${_pre[@]+"${_pre[@]}"}" claude "${_args[@]+"${_args[@]}"}"
   fi
 }
 SHELLFUNC
@@ -104,14 +120,31 @@ SHELLFUNC
 # claude: runs in Docker by default; use --host to run directly on WSL
 #         use --yolo to enable --dangerously-skip-permissions
 function claude {
-  $mapped = @($args | ForEach-Object {
-    if ($_ -eq '--yolo') { '--dangerously-skip-permissions' } else { $_ }
-  })
-  if ($mapped.Count -gt 0 -and $mapped[0] -eq "--host") {
+  $pre = @()
+  $mapped = @()
+  $i = 0
+  while ($i -lt $args.Count) {
+    $a = $args[$i]
+    if ($a -eq '--yolo') {
+      $mapped += '--dangerously-skip-permissions'
+    } elseif ($a -eq '--work') {
+      $pre += '--work'
+    } elseif ($a -eq '--local') {
+      $pre += '--local'
+      if ($i + 1 -lt $args.Count -and -not $args[$i + 1].StartsWith('--')) {
+        $i++
+        $pre += $args[$i]
+      }
+    } else {
+      $mapped += $a
+    }
+    $i++
+  }
+  if ($mapped.Count -gt 0 -and $mapped[0] -eq '--host') {
     $rest = if ($mapped.Count -gt 1) { $mapped[1..($mapped.Count - 1)] } else { @() }
     wsl claude --host @rest
   } else {
-    wsl ai-agent claude @mapped
+    wsl ai-agent @pre claude @mapped
   }
 }
 PSFUNC
