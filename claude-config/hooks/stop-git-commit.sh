@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -uo pipefail
 # Stop hook: git-init if needed, then commit all changes after each Claude turn.
 # Fires once when Claude finishes its full response — covers all edits made
 # during that turn in a single commit.
@@ -7,9 +7,10 @@ set -euo pipefail
 INPUT=$(cat)
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 
-# Git-init if not already a repo
+# Git-init if not already a repo (skip on filesystems that don't support chmod,
+# e.g. Windows/WSL bind mounts — git init will fail with a lock/chmod error)
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
-  git init
+  git init || exit 0
 fi
 
 # Stage everything
