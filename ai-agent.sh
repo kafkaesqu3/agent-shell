@@ -243,7 +243,12 @@ if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" || "$line" == \#* ]] && continue  # skip blanks and comments
         line="${line#export }"                            # strip optional 'export '
-        [[ "$line" == *=* ]] && DOCKER_ARGS+=("-e" "$line")
+        [[ "$line" == *=* ]] || continue
+        key="${line%%=*}"
+        val="${line#*=}"
+        val="${val#\"}" val="${val%\"}"                  # strip surrounding double-quotes
+        val="${val#\'}" val="${val%\'}"                  # strip surrounding single-quotes
+        DOCKER_ARGS+=("-e" "$key=$val")
     done < "$ENV_FILE"
 else
     echo -e "${YELLOW}No .env file found${NC}"
@@ -261,7 +266,11 @@ if [ -f "$PROFILE_ENV" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
         line="${line#export }"
         [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
-        DOCKER_ARGS+=("-e" "$line")
+        key="${line%%=*}"
+        val="${line#*=}"
+        val="${val#\"}" val="${val%\"}"                  # strip surrounding double-quotes
+        val="${val#\'}" val="${val%\'}"                  # strip surrounding single-quotes
+        DOCKER_ARGS+=("-e" "$key=$val")
     done < "$PROFILE_ENV"
 fi
 [ -n "$CLAUDE_MODEL" ] && DOCKER_ARGS+=("-e" "CLAUDE_MODEL=$CLAUDE_MODEL")
