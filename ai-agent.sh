@@ -207,8 +207,23 @@ else
     if [ -z "$CONTAINER_NAME" ]; then
         CONTAINER_NAME="$(basename "$(pwd)")"
     fi
-    DOCKER_ARGS+=("--name" "$CONTAINER_NAME")
     echo -e "${BLUE}Container name: $CONTAINER_NAME${NC}"
+
+    # If container already exists, exec into it instead of creating a new one
+    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+        echo -e "${YELLOW}Reusing existing container: $CONTAINER_NAME${NC}"
+        # Start it if stopped
+        if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+            docker start "$CONTAINER_NAME" > /dev/null
+        fi
+        if [ $# -gt 0 ]; then
+            exec docker exec -it "$CONTAINER_NAME" "$@"
+        else
+            exec docker exec -it "$CONTAINER_NAME" /bin/bash
+        fi
+    fi
+
+    DOCKER_ARGS+=("--name" "$CONTAINER_NAME")
 fi
 
 # Parse .env and pass each var as -e KEY=VAL
