@@ -34,7 +34,7 @@ install_path() {
   fi
 
   if [ -n "$real_claude" ]; then
-    if grep -q "claude-host" "$real_claude" 2>/dev/null; then
+    if grep -q "ai-agent" "$real_claude" 2>/dev/null; then
       cp "$SCRIPT_DIR/claude-wrapper.sh" "$real_claude"
       ok "claude wrapper updated"
     else
@@ -81,35 +81,9 @@ install_path() {
 export PATH="$HOME/.local/share/fnm:$PATH"
 eval "$(fnm env 2>/dev/null)" || true
 
-# claude: runs in Docker by default; use --host to run directly on this machine
-#         use --yolo to enable --dangerously-skip-permissions
-claude() {
-  local -a _pre=() _args=()
-  local i=1
-  while [[ $i -le $# ]]; do
-    local _arg="${!i}"
-    case "$_arg" in
-      --yolo) _args+=("--dangerously-skip-permissions") ;;
-      --work) _pre+=("--work") ;;
-      --local)
-        _pre+=("--local")
-        local _ni=$(( i + 1 ))
-        local _next="${!_ni:-}"
-        if [[ -n "$_next" && "$_next" != --* ]]; then
-          _pre+=("$_next")
-          (( i++ ))
-        fi
-        ;;
-      *) _args+=("$_arg") ;;
-    esac
-    (( i++ ))
-  done
-  if [[ "${_args[0]:-}" == "--host" ]]; then
-    command claude-host "${_args[@]:1}"
-  else
-    ai-agent "${_pre[@]+"${_pre[@]}"}" claude "${_args[@]+"${_args[@]}"}"
-  fi
-}
+# claude is an alias for ai-agent — all routing (host/Docker, profiles, --yolo)
+# is handled there.
+alias claude='ai-agent'
 SHELLFUNC
 
   echo ""
@@ -117,42 +91,17 @@ SHELLFUNC
   echo -e "   ${YELLOW}For Windows users calling claude from PowerShell via WSL:${NC}"
   echo ""
   cat << 'PSFUNC'
-# claude: runs in Docker by default; use --host to run directly on WSL
-#         use --yolo to enable --dangerously-skip-permissions
-function claude {
-  $pre = @()
-  $mapped = @()
-  $i = 0
-  while ($i -lt $args.Count) {
-    $a = $args[$i]
-    if ($a -eq '--yolo') {
-      $mapped += '--dangerously-skip-permissions'
-    } elseif ($a -eq '--work') {
-      $pre += '--work'
-    } elseif ($a -eq '--local') {
-      $pre += '--local'
-      if ($i + 1 -lt $args.Count -and -not $args[$i + 1].StartsWith('--')) {
-        $i++
-        $pre += $args[$i]
-      }
-    } else {
-      $mapped += $a
-    }
-    $i++
-  }
-  if ($mapped.Count -gt 0 -and $mapped[0] -eq '--host') {
-    $rest = if ($mapped.Count -gt 1) { $mapped[1..($mapped.Count - 1)] } else { @() }
-    wsl claude --host @rest
-  } else {
-    wsl ai-agent @pre claude @mapped
-  }
-}
+# claude is an alias for ai-agent — all routing (host/Docker, profiles, --yolo)
+# is handled there.
+function claude { wsl ai-agent @args }
 PSFUNC
 
   echo ""
-  echo -e "  ${YELLOW}Tip:${NC} 'claude' launches in Docker (isolated, reproducible)."
-  echo -e "        'claude --host' runs the local binary directly on this machine."
-  echo -e "        'claude --yolo' enables --dangerously-skip-permissions (works with both)."
+  echo -e "  ${YELLOW}Tip:${NC} 'claude' and 'ai-agent' are interchangeable — both route through ai-agent."
+  echo -e "        Default: Docker (isolated, reproducible)."
+  echo -e "        'claude --host' / 'ai-agent --host': run directly on this machine."
+  echo -e "        'claude --work' / '--local [MODEL]': layer a credential profile on top."
+  echo -e "        '--yolo': enable --dangerously-skip-permissions (works with all modes)."
   echo ""
 }
 

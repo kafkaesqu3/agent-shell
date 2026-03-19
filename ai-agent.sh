@@ -30,6 +30,8 @@ Options:
   --browsing          Use ai-agent:browsing image (base + Chromium)
   --work               Load .env.work profile (Databricks / work credentials)
   --local [MODEL]      Load .env.local profile; optionally set CLAUDE_MODEL=MODEL
+  --host              Run on this machine instead of Docker (still applies env/profile)
+  --yolo              Enable --dangerously-skip-permissions (passed through to claude)
   -h, --help          Show this help message
 
 Subcommands:
@@ -56,6 +58,7 @@ SKILL_PROFILES=""
 USE_RM=false
 PROFILE=""
 CLAUDE_MODEL=""
+HOST_MODE=false
 while true; do
     if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
         usage; exit 0
@@ -96,10 +99,28 @@ while true; do
             shift
         fi
         shift
+    elif [[ "$1" == "--host" ]]; then
+        HOST_MODE=true
+        shift
     else
         break
     fi
 done
+
+# Translate --yolo in passthrough args
+INVOKED_AS="$(basename "$0")"
+_translated=()
+for _a in "$@"; do
+    [[ "$_a" == "--yolo" ]] && _translated+=("--dangerously-skip-permissions") || _translated+=("$_a")
+done
+set -- "${_translated[@]+"${_translated[@]}"}"
+
+# When invoked as 'claude', inject 'claude' as the container command so that
+# 'claude foo' maps to 'docker run ... claude foo' inside the container.
+# Skip injection if 'sync' was given (handled below as a subcommand).
+if [[ "$INVOKED_AS" == "claude" && "${1:-}" != "sync" ]]; then
+    set -- claude "$@"
+fi
 
 # Handle subcommands
 if [[ "${1:-}" == "sync" ]]; then
@@ -147,6 +168,22 @@ if [ -n "$PROFILE" ]; then
     if [ -z "$PROFILE_ENV" ]; then
         echo -e "${YELLOW}Warning: no .env.$PROFILE found (searched CWD, script dir, ~/.config/ai-agent/)${NC}"
     fi
+fi
+
+# --- Host mode: source env files on the host and exec the local claude binary ---
+if [[ "$HOST_MODE" == true ]]; then
+    if ! command -v claude-host &>/dev/null; then
+        echo -e "${RED}claude-host not found — run install.sh --path to set up${NC}"
+        exit 1
+    fi
+    if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+        set -o allexport; source "$ENV_FILE"; set +o allexport
+    fi
+    if [[ -f "$PROFILE_ENV" ]]; then
+        set -o allexport; source "$PROFILE_ENV"; set +o allexport
+    fi
+    [[ -n "$CLAUDE_MODEL" ]] && export CLAUDE_MODEL
+    exec claude-host "$@"
 fi
 
 echo -e "${BLUE}AI Agent Container${NC}"
