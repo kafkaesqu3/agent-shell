@@ -91,9 +91,10 @@ SHELLFUNC
   echo -e "   ${YELLOW}For Windows users calling claude from PowerShell via WSL:${NC}"
   echo ""
   cat << 'PSFUNC'
-# claude is an alias for ai-agent — all routing (host/Docker, profiles, --yolo)
-# is handled there.
-function claude { wsl ai-agent @args }
+# claude and ai-agent are interchangeable entry points — all routing
+# (host/Docker, profiles, --yolo) is handled by ai-agent in WSL.
+function claude   { wsl ai-agent @args }
+function ai-agent { wsl ai-agent @args }
 PSFUNC
 
   echo ""
