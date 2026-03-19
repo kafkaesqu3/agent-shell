@@ -214,12 +214,23 @@ else
         echo -e "${YELLOW}Reusing existing container: $CONTAINER_NAME${NC}"
         # Start it if stopped
         if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
-            docker start "$CONTAINER_NAME" > /dev/null
-        fi
-        if [ $# -gt 0 ]; then
-            exec docker exec -it "$CONTAINER_NAME" "$@"
+            if ! docker start "$CONTAINER_NAME" > /dev/null 2>&1; then
+                echo -e "${YELLOW}Stopped container could not be restarted (stale mounts?), removing and recreating...${NC}"
+                docker rm "$CONTAINER_NAME" > /dev/null
+                # Fall through to docker run below
+            else
+                if [ $# -gt 0 ]; then
+                    exec docker exec -it "$CONTAINER_NAME" "$@"
+                else
+                    exec docker exec -it "$CONTAINER_NAME" /bin/bash
+                fi
+            fi
         else
-            exec docker exec -it "$CONTAINER_NAME" /bin/bash
+            if [ $# -gt 0 ]; then
+                exec docker exec -it "$CONTAINER_NAME" "$@"
+            else
+                exec docker exec -it "$CONTAINER_NAME" /bin/bash
+            fi
         fi
     fi
 
