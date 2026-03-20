@@ -21,6 +21,15 @@ err()   { echo -e "${RED}[ERROR]${NC} $*"; }
 
 cmd_exists() { command -v "$1" &>/dev/null; }
 
+# Portable in-place sed: BSD sed (macOS) requires an explicit empty extension with -i.
+sed_i() {
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "$@"
+  else
+    sed -i "$@"
+  fi
+}
+
 detect_os() {
   if [[ "$OSTYPE" == "darwin"* ]]; then
     echo "macos"
