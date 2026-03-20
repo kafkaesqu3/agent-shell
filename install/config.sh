@@ -4,8 +4,47 @@ set -euo pipefail
 # shellcheck source=install/common.sh
 [[ -z "${SCRIPT_DIR:-}" ]] && source "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/install/common.sh"
 
+_install_claude_binary() {
+  if cmd_exists claude; then
+    ok "Claude Code already installed ($(claude --version 2>/dev/null || echo 'unknown version'))"
+  else
+    info "Installing Claude Code..."
+    curl -fsSL https://claude.ai/install.sh | bash 2>&1 | tail -3
+    ok "Claude Code installed"
+  fi
+
+  if ! cmd_exists claude; then warn "Claude Code not found — skipping plugins"; return; fi
+
+  info "Installing Claude Code plugins..."
+  claude plugin marketplace add obra/superpowers-marketplace 2>/dev/null \
+    && ok "  superpowers-marketplace added" \
+    || warn "  superpowers-marketplace (skipped)"
+  local plugins=(
+    "superpowers@superpowers-marketplace"
+    "commit-commands@claude-plugins-official"
+    "hookify@claude-plugins-official"
+    "context7@claude-plugins-official"
+    "frontend-design@claude-plugins-official"
+    "claude-code-setup@claude-plugins-official"
+    "claude-md-management@claude-plugins-official"
+    "security-guidance@claude-plugins-official"
+    "code-review@claude-plugins-official"
+  )
+  for plugin in "${plugins[@]}"; do
+    if claude plugin install "$plugin" 2>/dev/null; then
+      ok "  $plugin"
+    else
+      warn "  $plugin (skipped)"
+    fi
+  done
+  ok "Claude Code plugins installed"
+}
+
 install_config() {
   echo -e "${BOLD}--- Claude Code Configuration ---${NC}"
+
+  _install_claude_binary
+
   mkdir -p "$CLAUDE_HOME"
 
   # --- settings.json: merge MCP servers ---
