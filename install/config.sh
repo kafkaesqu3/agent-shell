@@ -30,7 +30,7 @@ install_config() {
 
     local merged=/tmp/claude-settings-merged.json
     [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
-      sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$merged"
+      sed_i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$merged"
 
     cp "$host_settings" "${host_settings}.bak"
     mv "$merged" "$host_settings"
@@ -39,7 +39,7 @@ install_config() {
     info "No existing settings.json — copying from repo"
     cp "$repo_settings" "$host_settings"
     [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
-      sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$host_settings"
+      sed_i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$host_settings"
     ok "settings.json installed"
   fi
 
