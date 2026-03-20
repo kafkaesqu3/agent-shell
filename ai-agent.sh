@@ -182,8 +182,11 @@ if [[ "$HOST_MODE" == true ]]; then
     if [[ -f "$PROFILE_ENV" ]]; then
         set -o allexport; source "$PROFILE_ENV"; set +o allexport
     fi
-    [[ -n "$CLAUDE_MODEL" ]] && export CLAUDE_MODEL
-    exec claude-host "$@"
+    if [[ -n "$CLAUDE_MODEL" ]]; then
+        exec claude-host --model "$CLAUDE_MODEL" "$@"
+    else
+        exec claude-host "$@"
+    fi
 fi
 
 echo -e "${BLUE}AI Agent Container${NC}"
