@@ -6,7 +6,7 @@
 CLAUDE_HOME="$HOME/.claude"
 IMAGE_NAME="ai-agent:latest"
 VOLUME_NAME="ai-agent-claude"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 # Colors
 RED='\033[0;31m'
