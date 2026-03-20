@@ -21,8 +21,12 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
+# Collect changed file summary for commit body
+STAT=$(git diff --cached --stat 2>/dev/null | tail -1)
+FILES=$(git diff --cached --name-only 2>/dev/null | head -20 | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+
 # Derive commit message from the last user message in the transcript
-MSG="claude: session checkpoint"
+MSG=""
 if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
   LAST=$(jq -r '
     [.[] | select(.role == "user")] | last |
@@ -37,8 +41,16 @@ if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
   fi
 fi
 
+# Fallback: use changed files as subject
+if [ -z "$MSG" ]; then
+  MSG="claude: update $FILES"
+  MSG=$(echo "$MSG" | cut -c1-72)
+fi
+
 git commit \
   -m "$MSG" \
+  -m "Changed: $FILES" \
+  -m "$STAT" \
   >/dev/null 2>&1 || true
 
 exit 0
