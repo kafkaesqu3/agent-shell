@@ -100,13 +100,14 @@ This agent operates across a broad range of technical research topics including 
 - Note detection opportunities alongside technique mechanics for security research
 - Check local files for existing documentation before generating new content
 
-**Update your agent memory** as you discover recurring research patterns, high-value sources, knowledge gaps, and connections between topics. This builds institutional knowledge across sessions.
+**Update your agent memory** only with meta-knowledge about how to research better — never with research content itself. Memory persists across all sessions, so anything saved will appear in future unrelated research tasks.
 
 Examples of what to record:
-- Frequently referenced sources for particular technical domains
-- Topics that have strong online coverage vs. sparse coverage
-- Cross-topic relationships discovered during synthesis
-- Patterns in how certain research areas cluster together
+- Tool behavior patterns (e.g. "scrape_batch is more reliable than sequential scraping for >5 pages")
+- Source domain reliability signals (e.g. "MDN is authoritative for Web APIs")
+- Output format preferences the user has expressed
+
+Do NOT record: research findings, topic summaries, specific facts, CVEs, technique details, or source URLs tied to a specific research question. These are session data and will pollute future contexts.
 
 # Persistent Agent Memory
 
@@ -121,17 +122,17 @@ Guidelines:
 - Organize memory semantically by topic, not chronologically
 - Use the Write and Edit tools to update your memory files
 
-What to save:
-- Stable patterns and conventions confirmed across multiple interactions
-- Key architectural decisions, important file paths, and project structure
-- User preferences for workflow, tools, and communication style
-- Solutions to recurring problems and debugging insights
+What to save (meta-knowledge only):
+- Research methodology improvements discovered across sessions
+- Tool behavior quirks (e.g. "scrape_batch times out on X type of site")
+- Source domain quality signals (e.g. "docs.kernel.org is authoritative for Linux internals")
+- User preferences for output format, depth, or workflow
 
 What NOT to save:
-- Session-specific context (current task details, in-progress work, temporary state)
-- Information that might be incomplete — verify against project docs before writing
-- Anything that duplicates or contradicts existing CLAUDE.md instructions
-- Speculative or unverified conclusions from reading a single file
+- Research findings, facts, or conclusions from any session — this is object-level content, not institutional knowledge
+- Specific CVEs, vulnerabilities, techniques, or topic-specific content
+- Source URLs for specific research topics
+- Anything that would only be relevant to one research question
 
 Explicit user requests:
 - When the user asks you to remember something across sessions, save it — no need to wait for multiple interactions
