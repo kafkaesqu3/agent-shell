@@ -25,21 +25,12 @@ fi
 STAT=$(git diff --cached --stat 2>/dev/null | tail -1)
 FILES=$(git diff --cached --name-only 2>/dev/null | head -20 | tr '\n' ' ' | sed 's/[[:space:]]*$//')
 
-# Derive commit message from the last user message in the transcript
-MSG=""
-if [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
-  LAST=$(jq -r '
-    [.[] | select(.role == "user")] | last |
-    .content |
-    if type == "array" then map(select(.type == "text") | .text) | join(" ")
-    else .
-    end
-  ' "$TRANSCRIPT" 2>/dev/null || true)
-  if [ -n "$LAST" ]; then
-    # Trim to 72 chars, collapse whitespace
-    MSG=$(echo "$LAST" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g; s/^[[:space:]]*//; s/[[:space:]]*$//' | cut -c1-72)
-  fi
-fi
+# Generate commit message from diff using Claude CLI
+DIFF=$(git diff --cached 2>/dev/null | head -c 8000)
+MSG=$(echo "$DIFF" | claude -p \
+  "Write a concise git commit subject line in imperative mood, max 72 chars. \
+Describe what was changed at a high level. Output only the commit message, nothing else." \
+  2>/dev/null | head -1 | cut -c1-72)
 
 # Fallback: use changed files as subject
 if [ -z "$MSG" ]; then
