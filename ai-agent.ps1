@@ -28,6 +28,8 @@ Options:
   --browsing          Use ai-agent:browsing image (base + Chromium)
   --work               Load .env.work profile (Databricks / work credentials)
   --local [MODEL]      Load .env.local profile; optionally set CLAUDE_MODEL=MODEL
+  --host              Run in WSL on this machine instead of Docker (still applies env/profile)
+  --yolo              Enable --dangerously-skip-permissions (passed through to claude)
   -h, --help          Show this help message
 
 Subcommands:
@@ -57,6 +59,7 @@ $SkillProfiles = $null
 $UseRm = $false
 $ProfileName = ""
 $ClaudeModel = ""
+$HostMode = $false
 $i = 0
 while ($i -lt $PassedArgs.Count) {
     $arg = $PassedArgs[$i]
@@ -88,11 +91,23 @@ while ($i -lt $PassedArgs.Count) {
             $ClaudeModel = $PassedArgs[$i + 1]; $i++
         }
         $i++
+    } elseif ($arg -eq "--host") {
+        $HostMode = $true; $i++
     } else {
         break
     }
 }
 $PassArgs = if ($i -lt $PassedArgs.Count) { $PassedArgs[$i..($PassedArgs.Count - 1)] } else { @() }
+
+# Translate --yolo in passthrough args
+$PassArgs = @($PassArgs | ForEach-Object { if ($_ -eq '--yolo') { '--dangerously-skip-permissions' } else { $_ } })
+
+# When invoked as 'claude', inject 'claude' as the container command so that
+# 'claude foo' maps to 'docker run ... claude foo' inside the container.
+$InvokedAs = [System.IO.Path]::GetFileNameWithoutExtension($MyInvocation.MyCommand.Name)
+if ($InvokedAs -eq 'claude' -and ($PassArgs.Count -eq 0 -or $PassArgs[0] -ne 'sync')) {
+    $PassArgs = @('claude') + $PassArgs
+}
 
 # Handle subcommands
 if ($PassArgs.Count -gt 0 -and $PassArgs[0] -eq "sync") {
@@ -143,6 +158,27 @@ if ($ProfileName -ne "") {
     if ($ProfileEnv -eq "") {
         Write-Host "Warning: no .env.$ProfileName found (searched CWD, script dir, ~\.config\ai-agent\)" -ForegroundColor Yellow
     }
+}
+
+# --- Host mode: pass env vars to WSL and exec claude-host there ---
+if ($HostMode) {
+    $check = wsl command -v claude-host 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "claude-host not found in WSL — run install.sh --path to set up" -ForegroundColor Red
+        exit 1
+    }
+    $wslEnvArgs = @()
+    foreach ($file in @($EnvFile, $ProfileEnv) | Where-Object { $_ -and (Test-Path $_) }) {
+        Get-Content $file | ForEach-Object {
+            $line = $_.Trim() -replace '^export\s+', ''
+            if ($line -match '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+                $wslEnvArgs += "$($matches[1])=$($matches[2])"
+            }
+        }
+    }
+    if ($ClaudeModel -ne "") { $wslEnvArgs += "CLAUDE_MODEL=$ClaudeModel" }
+    & wsl env @wslEnvArgs claude-host @PassArgs
+    exit $LASTEXITCODE
 }
 
 Write-Host "AI Agent Container" -ForegroundColor Cyan

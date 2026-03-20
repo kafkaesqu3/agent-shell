@@ -30,6 +30,11 @@ if [ -f "$CLAUDE_JSON_STORE" ]; then
 else
   echo '{}' > "$CLAUDE_JSON"
 fi
+# Recover from a corrupted claude.json (e.g. container killed mid-write)
+if ! jq empty "$CLAUDE_JSON" 2>/dev/null; then
+  echo "Warning: corrupted claude.json detected, resetting to empty" >&2
+  echo '{}' > "$CLAUDE_JSON"
+fi
 chown agent:agent "$CLAUDE_JSON"
 trap 'cp -f "$CLAUDE_JSON" "$CLAUDE_JSON_STORE" 2>/dev/null || true' EXIT
 

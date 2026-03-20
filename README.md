@@ -42,11 +42,16 @@ source ~/.zshrc   # or ~/.bashrc
 
 # Done — run claude from any project
 cd ~/projects/my-app
-claude            # runs Claude Code inside Docker
-claude --host     # runs Claude Code locally on the host
+claude                       # Claude Code in Docker (default)
+claude --host                # Claude Code on this machine
+claude --work                # Docker + .env.work credentials layered on top
+claude --host --work         # host + .env.work credentials
+claude --local gpt-4o        # Docker + .env.local + CLAUDE_MODEL=gpt-4o
+claude --yolo                # any mode + --dangerously-skip-permissions
+ai-agent                     # interactive shell in Docker (no claude injection)
 ```
 
-**Windows (PowerShell):** paste the function printed by `install.sh` into your PowerShell profile, then use `claude` or `ai-agent.ps1` directly.
+**Windows (PowerShell):** paste the function printed by `install.sh` into your PowerShell profile — `claude` is aliased to `wsl ai-agent` so all flags work identically.
 
 ### Install Modules
 
@@ -225,14 +230,29 @@ GOOGLE_API_KEY=...        # optional
 
 #### Daily use
 
-```bash
-cd ~/projects/my-app
-claude            # runs Claude Code inside the Docker container
-claude --host     # runs Claude Code directly on the host (bypasses Docker)
-ai-agent          # launches an interactive shell in the container
-```
+`claude` and `ai-agent` are the same entry point — all routing goes through `ai-agent.sh`.
 
-The launcher auto-detects `.env` from:
+| Command | Result |
+|---------|--------|
+| `claude` | Claude Code in Docker |
+| `claude "explain this codebase"` | Claude Code in Docker with prompt |
+| `claude --host` | Claude Code on this machine (no Docker) |
+| `claude --work` | Docker + `.env.work` layered on base `.env` |
+| `claude --host --work` | Host + `.env.work` sourced into environment |
+| `claude --local` | Docker + `.env.local` layered on base `.env` |
+| `claude --local gpt-4o` | Docker + `.env.local` + `CLAUDE_MODEL=gpt-4o` |
+| `claude --host --local gpt-4o` | Host + `.env.local` + `CLAUDE_MODEL` exported |
+| `claude --yolo` | Any of the above + `--dangerously-skip-permissions` |
+| `claude --work --yolo` | Docker, work creds, no permission prompts |
+| `claude --rm` | Docker (ephemeral — container removed on exit) |
+| `claude --lite` | Docker using `ai-agent:lite` image |
+| `claude --browsing` | Docker using `ai-agent:browsing` image |
+| `claude sync` | Copy session logs from container to host |
+| `ai-agent` | Interactive shell in Docker (no claude injected) |
+
+Profile files (`.env.work`, `.env.local`) are searched in order: current directory → script directory → `~/.config/ai-agent/`. They are layered on top of the base `.env`, so they only need to contain the keys that differ.
+
+The base `.env` is auto-detected from:
 1. `--env <path>` flag
 2. `.env` in the current directory
 3. `.env` in the script directory
@@ -270,7 +290,7 @@ agent-shell/
 ├── install.sh              # Host/VPS installer (Claude Code + MCP + config)
 ├── ai-agent.sh             # Bash launcher (add to PATH)
 ├── ai-agent.ps1            # PowerShell launcher (Windows)
-├── claude-wrapper.sh       # claude → container, claude --host → local
+├── claude-wrapper.sh       # thin shim: exec ai-agent "$@" (for non-interactive contexts)
 ├── claude-config/
 │   ├── CLAUDE.md           # Default system instructions
 │   ├── settings.json       # MCP servers, permissions, hooks, statusline

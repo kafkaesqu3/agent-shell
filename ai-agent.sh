@@ -30,6 +30,8 @@ Options:
   --browsing          Use ai-agent:browsing image (base + Chromium)
   --work               Load .env.work profile (Databricks / work credentials)
   --local [MODEL]      Load .env.local profile; optionally set CLAUDE_MODEL=MODEL
+  --host              Run on this machine instead of Docker (still applies env/profile)
+  --yolo              Enable --dangerously-skip-permissions (passed through to claude)
   -h, --help          Show this help message
 
 Subcommands:
@@ -56,6 +58,7 @@ SKILL_PROFILES=""
 USE_RM=false
 PROFILE=""
 CLAUDE_MODEL=""
+HOST_MODE=false
 while true; do
     if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
         usage; exit 0
@@ -96,10 +99,28 @@ while true; do
             shift
         fi
         shift
+    elif [[ "$1" == "--host" ]]; then
+        HOST_MODE=true
+        shift
     else
         break
     fi
 done
+
+# Translate --yolo in passthrough args
+INVOKED_AS="$(basename "$0")"
+_translated=()
+for _a in "$@"; do
+    [[ "$_a" == "--yolo" ]] && _translated+=("--dangerously-skip-permissions") || _translated+=("$_a")
+done
+set -- "${_translated[@]+"${_translated[@]}"}"
+
+# When invoked as 'claude', inject 'claude' as the container command so that
+# 'claude foo' maps to 'docker run ... claude foo' inside the container.
+# Skip injection if 'sync' was given (handled below as a subcommand).
+if [[ "$INVOKED_AS" == "claude" && "${1:-}" != "sync" ]]; then
+    set -- claude "$@"
+fi
 
 # Handle subcommands
 if [[ "${1:-}" == "sync" ]]; then
@@ -149,6 +170,22 @@ if [ -n "$PROFILE" ]; then
     fi
 fi
 
+# --- Host mode: source env files on the host and exec the local claude binary ---
+if [[ "$HOST_MODE" == true ]]; then
+    if ! command -v claude-host &>/dev/null; then
+        echo -e "${RED}claude-host not found — run install.sh --path to set up${NC}"
+        exit 1
+    fi
+    if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
+        set -o allexport; source "$ENV_FILE"; set +o allexport
+    fi
+    if [[ -f "$PROFILE_ENV" ]]; then
+        set -o allexport; source "$PROFILE_ENV"; set +o allexport
+    fi
+    [[ -n "$CLAUDE_MODEL" ]] && export CLAUDE_MODEL
+    exec claude-host "$@"
+fi
+
 echo -e "${BLUE}AI Agent Container${NC}"
 echo "Working directory: $(pwd)"
 echo ""
@@ -170,8 +207,34 @@ else
     if [ -z "$CONTAINER_NAME" ]; then
         CONTAINER_NAME="$(basename "$(pwd)")"
     fi
-    DOCKER_ARGS+=("--name" "$CONTAINER_NAME")
     echo -e "${BLUE}Container name: $CONTAINER_NAME${NC}"
+
+    # If container already exists, exec into it instead of creating a new one
+    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+        echo -e "${YELLOW}Reusing existing container: $CONTAINER_NAME${NC}"
+        # Start it if stopped
+        if ! docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+            if ! docker start "$CONTAINER_NAME" > /dev/null 2>&1; then
+                echo -e "${YELLOW}Stopped container could not be restarted (stale mounts?), removing and recreating...${NC}"
+                docker rm "$CONTAINER_NAME" > /dev/null
+                # Fall through to docker run below
+            else
+                if [ $# -gt 0 ]; then
+                    exec docker exec -it "$CONTAINER_NAME" "$@"
+                else
+                    exec docker exec -it "$CONTAINER_NAME" /bin/bash
+                fi
+            fi
+        else
+            if [ $# -gt 0 ]; then
+                exec docker exec -it "$CONTAINER_NAME" "$@"
+            else
+                exec docker exec -it "$CONTAINER_NAME" /bin/bash
+            fi
+        fi
+    fi
+
+    DOCKER_ARGS+=("--name" "$CONTAINER_NAME")
 fi
 
 # Parse .env and pass each var as -e KEY=VAL
@@ -180,7 +243,12 @@ if [ -n "$ENV_FILE" ] && [ -f "$ENV_FILE" ]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" || "$line" == \#* ]] && continue  # skip blanks and comments
         line="${line#export }"                            # strip optional 'export '
-        [[ "$line" == *=* ]] && DOCKER_ARGS+=("-e" "$line")
+        [[ "$line" == *=* ]] || continue
+        key="${line%%=*}"
+        val="${line#*=}"
+        val="${val#\"}" val="${val%\"}"                  # strip surrounding double-quotes
+        val="${val#\'}" val="${val%\'}"                  # strip surrounding single-quotes
+        DOCKER_ARGS+=("-e" "$key=$val")
     done < "$ENV_FILE"
 else
     echo -e "${YELLOW}No .env file found${NC}"
@@ -198,7 +266,11 @@ if [ -f "$PROFILE_ENV" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
         line="${line#export }"
         [[ "$line" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
-        DOCKER_ARGS+=("-e" "$line")
+        key="${line%%=*}"
+        val="${line#*=}"
+        val="${val#\"}" val="${val%\"}"                  # strip surrounding double-quotes
+        val="${val#\'}" val="${val%\'}"                  # strip surrounding single-quotes
+        DOCKER_ARGS+=("-e" "$key=$val")
     done < "$PROFILE_ENV"
 fi
 [ -n "$CLAUDE_MODEL" ] && DOCKER_ARGS+=("-e" "CLAUDE_MODEL=$CLAUDE_MODEL")
