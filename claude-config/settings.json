@@ -182,8 +182,11 @@
       "args": ["-y", "brave-search-mcp"]
     },
     "brightdata": {
-      "type": "sse",
-      "url": "https://mcp.brightdata.com/sse?token=__BRIGHTDATA_API_KEY__"
+      "command": "npx",
+      "args": ["-y", "@brightdata/mcp"],
+      "env": {
+        "API_TOKEN": "__BRIGHTDATA_API_KEY__"
+      }
     },
     "puppeteer": {
       "command": "npx",
