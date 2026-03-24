@@ -22,8 +22,13 @@ install_docker() {
   echo "  3) browsing — Full environment + Chromium (~2x larger)"
   echo "  4) all      — All three"
   echo ""
-  read -rp "Choice [1/2/3/4, default=2]: " -n 1 choice
-  echo ""
+  if [[ -t 0 ]]; then
+    read -rp "Choice [1/2/3/4, default=2]: " -n 1 choice
+    echo ""
+  else
+    choice=""
+    info "Non-interactive shell — defaulting to base image"
+  fi
   choice="${choice:-2}"
 
   case "$choice" in

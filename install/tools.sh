@@ -75,8 +75,7 @@ _install_fedora() {
 
 _install_arch() {
   info "Installing Arch dependencies..."
-  sudo pacman -Syu
-  sudo pacman -S --noconfirm \
+  sudo pacman -S --noconfirm --needed \
     ripgrep fd shellcheck shfmt jq \
     fzf tmux zsh \
     python python-pip rust base-devel
@@ -147,9 +146,13 @@ install_tools() {
   fi
 
   # Claude Code (official installer)
-  info "Installing Claude Code..."
-  curl -fsSL https://claude.ai/install.sh | bash 2>&1 | tail -3
-  ok "Claude Code installed"
+  if cmd_exists claude; then
+    ok "Claude Code already installed ($(claude --version 2>/dev/null | head -1))"
+  else
+    info "Installing Claude Code..."
+    curl -fsSL https://claude.ai/install.sh | bash 2>&1 | tail -3
+    ok "Claude Code installed"
+  fi
 
   # Claude Code plugins
   _install_claude_plugins

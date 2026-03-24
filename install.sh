@@ -90,7 +90,7 @@ _menu() {
   local do_config=false do_tools=false do_mcp=false do_docker=false do_path=false do_agents=false
   for token in $selection; do
     case "$token" in
-      1) do_config=true; do_tools=true; do_mcp=true; do_agents=true; do_path=true ;;
+      1) do_config=true; do_tools=true; do_mcp=true; do_agents=true; do_docker=true; do_path=true ;;
       2) do_config=true ;;
       3) do_tools=true ;;
       4) do_mcp=true ;;
