@@ -169,7 +169,8 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:${PATH}"
 
-RUN pip install --no-cache-dir \
+RUN pip install --no-cache-dir setuptools && \
+    pip install --no-cache-dir \
     aider-chat \
     shell-gpt \
     openai \
