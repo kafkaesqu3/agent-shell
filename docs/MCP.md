@@ -12,7 +12,7 @@ Claude Code does **not** read MCP servers from `settings.json`. It reads them fr
 
 This repo uses **user scope** (`~/.claude.json`) for the shared server set so that project-level `.mcp.json` files in `/workspace` continue to work alongside them.
 
-> **Known Claude Code bug:** Claude Code does not read the top-level `mcpServers` key from `~/.claude.json` at runtime — it only reads from `projects["<path>"].mcpServers`. Tracked in [#35144](https://github.com/anthropics/claude-code/issues/35144), [#16728](https://github.com/anthropics/claude-code/issues/16728), [#32939](https://github.com/anthropics/claude-code/issues/32939). As a workaround, this repo writes servers to **both** the top-level key and `projects["/workspace"].mcpServers` (Docker) / `projects["$HOME"].mcpServers` (host install).
+> **Known Claude Code behaviour:** The top-level `mcpServers` key in `~/.claude.json` is the correct user-scope location, but if any project entry (`projects["<path>"].mcpServers`) exists with an empty `{}` value it silently shadows the global servers for that path. Tracked in [#35144](https://github.com/anthropics/claude-code/issues/35144), [#16728](https://github.com/anthropics/claude-code/issues/16728), [#32939](https://github.com/anthropics/claude-code/issues/32939). The entrypoint works around this by removing empty `mcpServers` from all project entries each startup so the global servers are never shadowed. Each server entry must also include a `"type"` field (`"stdio"` for command-based, `"http"` for URL-based) — Claude Code's schema validator rejects entries without it.
 
 ## Source of truth
 

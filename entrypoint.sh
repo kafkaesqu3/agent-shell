@@ -146,9 +146,16 @@ if [ -f "$MCP_FILE" ]; then
 
   mcp_servers=$(printf '%s' "$mcp_raw" | jq "$mcp_filter")
   tmp=$(mktemp)
+  # Write servers to user-scope top-level mcpServers.
+  # Also remove empty mcpServers ({}) from any project entries — Claude Code uses project-level
+  # mcpServers as an override and an empty {} silently shadows the global user-scope servers.
   jq --argjson mcp "$mcp_servers" '
     .mcpServers = $mcp |
-    .projects["/workspace"].mcpServers = $mcp
+    if .projects then
+      .projects |= with_entries(
+        if (.value.mcpServers // {}) == {} then del(.value.mcpServers) else . end
+      )
+    else . end
   ' "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
   chown agent:agent "$CLAUDE_JSON"
 fi

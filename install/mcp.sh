@@ -55,11 +55,15 @@ install_mcp() {
       from_entries
     ')
 
-    # Write to both top-level (future fix) and project-level (current workaround:
-    # Claude Code reads projects["<path>"].mcpServers, not top-level mcpServers)
-    jq --argjson mcp "$mcp_servers" --arg home "$HOME" '
+    # Write to user-scope top-level mcpServers.
+    # Also remove empty mcpServers ({}) from project entries so they don't shadow globals.
+    jq --argjson mcp "$mcp_servers" '
       .mcpServers = $mcp |
-      .projects[$home].mcpServers = $mcp
+      if .projects then
+        .projects |= with_entries(
+          if (.value.mcpServers // {}) == {} then del(.value.mcpServers) else . end
+        )
+      else . end
     ' "$claude_json" > /tmp/claude-json-mcp.json \
       && mv /tmp/claude-json-mcp.json "$claude_json"
     ok "MCP servers registered in $claude_json"
