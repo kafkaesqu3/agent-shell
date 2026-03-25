@@ -55,9 +55,12 @@ install_mcp() {
       from_entries
     ')
 
-    # Replace mcpServers entirely from source file (prevents stale entries persisting)
-    jq --argjson mcp "$mcp_servers" '.mcpServers = $mcp' \
-      "$claude_json" > /tmp/claude-json-mcp.json \
+    # Write to both top-level (future fix) and project-level (current workaround:
+    # Claude Code reads projects["<path>"].mcpServers, not top-level mcpServers)
+    jq --argjson mcp "$mcp_servers" --arg home "$HOME" '
+      .mcpServers = $mcp |
+      .projects[$home].mcpServers = $mcp
+    ' "$claude_json" > /tmp/claude-json-mcp.json \
       && mv /tmp/claude-json-mcp.json "$claude_json"
     ok "MCP servers registered in $claude_json"
   else

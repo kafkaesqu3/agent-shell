@@ -12,6 +12,8 @@ Claude Code does **not** read MCP servers from `settings.json`. It reads them fr
 
 This repo uses **user scope** (`~/.claude.json`) for the shared server set so that project-level `.mcp.json` files in `/workspace` continue to work alongside them.
 
+> **Known Claude Code bug:** Claude Code does not read the top-level `mcpServers` key from `~/.claude.json` at runtime — it only reads from `projects["<path>"].mcpServers`. Tracked in [#35144](https://github.com/anthropics/claude-code/issues/35144), [#16728](https://github.com/anthropics/claude-code/issues/16728), [#32939](https://github.com/anthropics/claude-code/issues/32939). As a workaround, this repo writes servers to **both** the top-level key and `projects["/workspace"].mcpServers` (Docker) / `projects["$HOME"].mcpServers` (host install).
+
 ## Source of truth
 
 **`claude-config/mcp-servers.json`** defines all MCP servers in the native `.mcp.json` format:

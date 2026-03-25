@@ -78,27 +78,6 @@ fi
 [ -f /opt/claude-config/zshrc     ] && cp /opt/claude-config/zshrc     /home/agent/.zshrc
 [ -f /opt/claude-config/tmux.conf ] && cp /opt/claude-config/tmux.conf /home/agent/.tmux.conf
 
-# --- MCP servers: register into ~/.claude.json (user scope) ---
-# mcp-servers.json is the source of truth (native .mcp.json format).
-# Each image bakes only the servers it supports (browsing adds puppeteer/playwright).
-# Substitute placeholders, drop unresolved entries, merge into ~/.claude.json.
-# Project-specific .mcp.json files in /workspace still work alongside these.
-MCP_FILE=/opt/claude-config/mcp-servers.json
-if [ -f "$MCP_FILE" ]; then
-  mcp_raw=$(cat "$MCP_FILE")
-  [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
-    mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g")
-
-  # Drop any entry with an unresolved placeholder
-  mcp_filter='.mcpServers | to_entries | map(select(.value | tostring | test("__[A-Z_]+__") | not)) | from_entries'
-
-  mcp_servers=$(printf '%s' "$mcp_raw" | jq "$mcp_filter")
-  tmp=$(mktemp)
-  jq --argjson mcp "$mcp_servers" '.mcpServers = $mcp' \
-    "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
-  chown agent:agent "$CLAUDE_JSON"
-fi
-
 # --- Credentials: populate from host file or env var ---
 # Host file always wins (ensures host re-auth propagates into the container).
 # Env var is used in headless/CI deployments where no host file exists.
@@ -146,6 +125,32 @@ if [ -n "$_BYPASS_TOKEN" ]; then
     jq '.hasCompletedOnboarding = true' "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
     chown agent:agent "$CLAUDE_JSON"
   fi
+fi
+
+# --- MCP servers: register into ~/.claude.json ---
+# mcp-servers.json is the source of truth (native .mcp.json format).
+# Each image bakes only the servers it supports (browsing adds puppeteer/playwright).
+# Substitute placeholders, drop unresolved entries, write to both:
+#   - top-level mcpServers (for when Anthropic fixes the user-scope bug)
+#   - projects["/workspace"].mcpServers (workaround: Claude reads project-level entries)
+# This block runs after onboarding so claude -p "ok" cannot overwrite these entries.
+# Project-specific .mcp.json files in /workspace still work alongside these.
+MCP_FILE=/opt/claude-config/mcp-servers.json
+if [ -f "$MCP_FILE" ]; then
+  mcp_raw=$(cat "$MCP_FILE")
+  [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
+    mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g")
+
+  # Drop any entry with an unresolved placeholder
+  mcp_filter='.mcpServers | to_entries | map(select(.value | tostring | test("__[A-Z_]+__") | not)) | from_entries'
+
+  mcp_servers=$(printf '%s' "$mcp_raw" | jq "$mcp_filter")
+  tmp=$(mktemp)
+  jq --argjson mcp "$mcp_servers" '
+    .mcpServers = $mcp |
+    .projects["/workspace"].mcpServers = $mcp
+  ' "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
+  chown agent:agent "$CLAUDE_JSON"
 fi
 
 # --- Skill profiles: merge extra plugins into settings.json ---
