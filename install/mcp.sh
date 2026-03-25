@@ -55,8 +55,8 @@ install_mcp() {
       from_entries
     ')
 
-    # Merge: repo servers win over existing entries with the same name
-    jq --argjson mcp "$mcp_servers" '.mcpServers = ((.mcpServers // {}) + $mcp)' \
+    # Replace mcpServers entirely from source file (prevents stale entries persisting)
+    jq --argjson mcp "$mcp_servers" '.mcpServers = $mcp' \
       "$claude_json" > /tmp/claude-json-mcp.json \
       && mv /tmp/claude-json-mcp.json "$claude_json"
     ok "MCP servers registered in $claude_json"

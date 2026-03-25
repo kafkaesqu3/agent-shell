@@ -94,7 +94,7 @@ if [ -f "$MCP_FILE" ]; then
 
   mcp_servers=$(printf '%s' "$mcp_raw" | jq "$mcp_filter")
   tmp=$(mktemp)
-  jq --argjson mcp "$mcp_servers" '.mcpServers = ((.mcpServers // {}) + $mcp)' \
+  jq --argjson mcp "$mcp_servers" '.mcpServers = $mcp' \
     "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
   chown agent:agent "$CLAUDE_JSON"
 fi
