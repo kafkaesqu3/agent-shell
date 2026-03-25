@@ -118,7 +118,8 @@ set -- "${_translated[@]+"${_translated[@]}"}"
 # When invoked as 'claude', inject 'claude' as the container command so that
 # 'claude foo' maps to 'docker run ... claude foo' inside the container.
 # Skip injection if 'sync' was given (handled below as a subcommand).
-if [[ "$INVOKED_AS" == "claude" && "${1:-}" != "sync" ]]; then
+# Skip injection in host mode — no container command is needed.
+if [[ "$INVOKED_AS" == "claude" && "${1:-}" != "sync" && "$HOST_MODE" != true ]]; then
     set -- claude "$@"
 fi
 
