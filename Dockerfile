@@ -177,16 +177,16 @@ ENV PATH="$VIRTUAL_ENV/bin:${PATH}"
 
 RUN pip install --no-cache-dir setuptools && \
     pip install --no-cache-dir \
-    aider-chat \
-    shell-gpt \
-    openai \
-    anthropic \
-    google-generativeai \
-    google-ai-generativelanguage \
+    # aider-chat \
+    # shell-gpt \
+    # openai \
+    # anthropic \
+    # google-generativeai \
+    # google-ai-generativelanguage \
     mcp-server-fetch
 
 # Install Fabric (AI patterns framework)
-RUN go install github.com/danielmiessler/fabric/cmd/fabric@v1.4.434
+# RUN go install github.com/danielmiessler/fabric/cmd/fabric@v1.4.434
 
 # Install gopls (required by gopls-lsp Claude plugin)
 RUN go install golang.org/x/tools/gopls@v0.21.1
