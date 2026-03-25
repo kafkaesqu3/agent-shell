@@ -80,21 +80,17 @@ fi
 
 # --- MCP servers: register into ~/.claude.json (user scope) ---
 # mcp-servers.json is the source of truth (native .mcp.json format).
-# Substitute placeholders, drop unresolved entries, strip browser servers when
-# chromium is absent, then merge into ~/.claude.json so servers are available
-# across all projects. Project-specific .mcp.json files in /workspace still work.
+# Each image bakes only the servers it supports (browsing adds puppeteer/playwright).
+# Substitute placeholders, drop unresolved entries, merge into ~/.claude.json.
+# Project-specific .mcp.json files in /workspace still work alongside these.
 MCP_FILE=/opt/claude-config/mcp-servers.json
 if [ -f "$MCP_FILE" ]; then
   mcp_raw=$(cat "$MCP_FILE")
   [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
     mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g")
 
-  # Build filter: drop unresolved placeholders; drop browser servers if no chromium
-  mcp_filter='.mcpServers | to_entries | map(select(.value | tostring | test("__[A-Z_]+__") | not))'
-  if ! command -v chromium &>/dev/null; then
-    mcp_filter="$mcp_filter | map(select(.key | IN(\"puppeteer\",\"playwright\") | not))"
-  fi
-  mcp_filter="$mcp_filter | from_entries"
+  # Drop any entry with an unresolved placeholder
+  mcp_filter='.mcpServers | to_entries | map(select(.value | tostring | test("__[A-Z_]+__") | not)) | from_entries'
 
   mcp_servers=$(printf '%s' "$mcp_raw" | jq "$mcp_filter")
   tmp=$(mktemp)

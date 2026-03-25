@@ -215,6 +215,13 @@ RUN npm install -g \
     @modelcontextprotocol/server-puppeteer \
     @playwright/mcp
 
+# Add browser MCP servers to the registry (base image has non-browser servers only)
+RUN jq '.mcpServers += {
+      "puppeteer": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-puppeteer"]},
+      "playwright": {"command": "npx", "args": ["-y", "@playwright/mcp", "--headless"]}
+    }' /opt/claude-config/mcp-servers.json > /tmp/mcp-servers.json \
+    && mv /tmp/mcp-servers.json /opt/claude-config/mcp-servers.json
+
 # Install Python browser deps (venv inherited from base)
 RUN pip install --no-cache-dir \
     playwright \

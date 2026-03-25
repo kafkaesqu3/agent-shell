@@ -29,14 +29,6 @@
     },
     "brightdata": {
       "url": "https://mcp.brightdata.com/sse?token=__BRIGHTDATA_API_KEY__"
-    },
-    "puppeteer": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp", "--headless"]
     }
   }
 }
