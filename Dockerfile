@@ -94,12 +94,15 @@ COPY claude-config/tmux.conf /home/agent/.tmux.conf
 RUN chown agent:agent /home/agent/.zshrc /home/agent/.tmux.conf
 
 # Copy config files and entrypoint
+# mcp-servers.json is excluded from lite — MCP packages are not installed here.
+# The base stage re-adds it so the entrypoint can register servers at startup.
 COPY claude-config/ /opt/claude-config/
 COPY entrypoint.sh /opt/entrypoint.sh
 # Strip Windows CRLF line endings so shebangs work on Linux
 RUN find /opt/claude-config -name "*.sh" -exec sed -i 's/\r//' {} + \
     && sed -i 's/\r//' /opt/entrypoint.sh \
-    && chmod +x /opt/entrypoint.sh /opt/claude-config/hooks/*.sh 2>/dev/null || true
+    && chmod +x /opt/entrypoint.sh /opt/claude-config/hooks/*.sh 2>/dev/null || true \
+    && rm -f /opt/claude-config/mcp-servers.json
 
 WORKDIR /workspace
 
@@ -163,6 +166,9 @@ RUN npm install -g \
     brave-search-mcp \
     @modelcontextprotocol/server-sequential-thinking \
     @upstash/context7-mcp
+
+# Bake MCP server definitions — entrypoint registers them into ~/.claude.json at startup
+COPY claude-config/mcp-servers.json /opt/claude-config/mcp-servers.json
 
 # Install Python AI tools in a venv (avoids conflict with Ubuntu's system pip)
 ENV VIRTUAL_ENV=/opt/venv

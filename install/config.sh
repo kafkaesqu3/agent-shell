@@ -8,18 +8,15 @@ install_config() {
   echo -e "${BOLD}--- Claude Code Configuration ---${NC}"
   mkdir -p "$CLAUDE_HOME"
 
-  # --- settings.json: merge MCP servers ---
+  # --- settings.json ---
   local repo_settings="$SCRIPT_DIR/claude-config/settings.json"
   local host_settings="$CLAUDE_HOME/settings.json"
 
   if [ -f "$host_settings" ]; then
     info "Merging repo settings into existing $host_settings"
     # Repo is the base; preserve user-specific overrides: model, plugins, UI prefs, attribution.
-    # For mcpServers, repo provides the schema but host values win — preserves already-substituted
-    # tokens on re-runs so __PLACEHOLDER__ strings never overwrite real tokens.
     jq -s '
       .[1] * {
-        mcpServers: (.[1].mcpServers * (.[0].mcpServers // {})),
         model:                 (.[0].model // .[1].model),
         enabledPlugins:        (.[0].enabledPlugins // {}),
         clearTerminalOnLaunch: (.[0].clearTerminalOnLaunch // .[1].clearTerminalOnLaunch),
@@ -27,21 +24,15 @@ install_config() {
       }
       | if .model == null then del(.model) else . end
     ' "$host_settings" "$repo_settings" > /tmp/claude-settings-merged.json
-
-    local merged=/tmp/claude-settings-merged.json
-    [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
-      sed_i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$merged"
-
     cp "$host_settings" "${host_settings}.bak"
-    mv "$merged" "$host_settings"
+    mv /tmp/claude-settings-merged.json "$host_settings"
     ok "Settings merged (backup at settings.json.bak)"
   else
     info "No existing settings.json — copying from repo"
     cp "$repo_settings" "$host_settings"
-    [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
-      sed_i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" "$host_settings"
     ok "settings.json installed"
   fi
+
 
   # --- CLAUDE.md ---
   local repo_claude_md="$SCRIPT_DIR/claude-config/CLAUDE.md"
