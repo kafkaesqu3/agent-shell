@@ -182,6 +182,13 @@ chown -R agent:agent /home/agent/.claude 2>/dev/null || true
 # --- Lock down permissions on .claude directory ---
 chmod -R 700 /home/agent/.claude 2>/dev/null || true
 
+# --- Unset build-time npm hardening env vars ---
+# These are set in the Dockerfile for supply-chain security during image builds,
+# but Docker ENV persists into the running container. At runtime they break npx
+# installs: IGNORE_SCRIPTS suppresses lifecycle scripts that finalize package
+# dist files, and MINIMUM_RELEASE_AGE can silently reject recent transitive deps.
+unset NPM_CONFIG_IGNORE_SCRIPTS NPM_CONFIG_MINIMUM_RELEASE_AGE
+
 # --- Drop to agent user and hand off to the requested command ---
 # No exec — shell must stay alive so the EXIT trap fires and saves ~/.claude.json
 gosu agent "$@"
