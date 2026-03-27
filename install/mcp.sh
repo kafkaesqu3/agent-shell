@@ -32,6 +32,45 @@ install_mcp() {
     warn "python3 not found — skipping mcp-server-fetch"
   fi
 
+  # --- Register MCP servers into ~/.claude.json (user scope) ---
+  # Claude Code reads MCP servers from ~/.claude.json, not settings.json.
+  # mcp-servers.json is the source of truth (native .mcp.json format).
+  # Project-specific .mcp.json files in project roots still work alongside these.
+  local mcp_file="$SCRIPT_DIR/claude-config/mcp-servers.json"
+  local claude_json="$HOME/.claude.json"
+  if [ -f "$mcp_file" ] && cmd_exists jq; then
+    [ -f "$claude_json" ] || echo '{}' > "$claude_json"
+
+    # Substitute known placeholders, then drop any entry still containing one
+    local mcp_raw
+    mcp_raw=$(cat "$mcp_file")
+    [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
+      mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g")
+
+    local mcp_servers
+    mcp_servers=$(printf '%s' "$mcp_raw" | jq '
+      .mcpServers |
+      to_entries |
+      map(select(.value | tostring | test("__[A-Z_]+__") | not)) |
+      from_entries
+    ')
+
+    # Write to user-scope top-level mcpServers.
+    # Also remove empty mcpServers ({}) from project entries so they don't shadow globals.
+    jq --argjson mcp "$mcp_servers" '
+      .mcpServers = $mcp |
+      if .projects then
+        .projects |= with_entries(
+          if (.value.mcpServers // {}) == {} then del(.value.mcpServers) else . end
+        )
+      else . end
+    ' "$claude_json" > /tmp/claude-json-mcp.json \
+      && mv /tmp/claude-json-mcp.json "$claude_json"
+    ok "MCP servers registered in $claude_json"
+  else
+    warn "mcp-servers.json or jq not found — skipping MCP server registration"
+  fi
+
   echo ""
 }
 

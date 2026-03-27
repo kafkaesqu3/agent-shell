@@ -1,0 +1,42 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "type": "stdio",
+      "command": "mcp-server-fetch"
+    },
+    "filesystem": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+    },
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"]
+    },
+    "sqlite": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "mcp-server-sqlite-npx"]
+    },
+    "context7": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"]
+    },
+    "brave-search": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "brave-search-mcp"]
+    },
+    "brightdata": {
+      "type": "sse",
+      "url": "https://mcp.brightdata.com/sse?token=__BRIGHTDATA_API_KEY__"
+    }
+  }
+}

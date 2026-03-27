@@ -6,7 +6,7 @@
 CLAUDE_HOME="$HOME/.claude"
 IMAGE_NAME="ai-agent:latest"
 VOLUME_NAME="ai-agent-claude"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 # Colors
 RED='\033[0;31m'
@@ -118,7 +118,8 @@ set -- "${_translated[@]+"${_translated[@]}"}"
 # When invoked as 'claude', inject 'claude' as the container command so that
 # 'claude foo' maps to 'docker run ... claude foo' inside the container.
 # Skip injection if 'sync' was given (handled below as a subcommand).
-if [[ "$INVOKED_AS" == "claude" && "${1:-}" != "sync" ]]; then
+# Skip injection in host mode — no container command is needed.
+if [[ "$INVOKED_AS" == "claude" && "${1:-}" != "sync" && "$HOST_MODE" != true ]]; then
     set -- claude "$@"
 fi
 
@@ -182,8 +183,11 @@ if [[ "$HOST_MODE" == true ]]; then
     if [[ -f "$PROFILE_ENV" ]]; then
         set -o allexport; source "$PROFILE_ENV"; set +o allexport
     fi
-    [[ -n "$CLAUDE_MODEL" ]] && export CLAUDE_MODEL
-    exec claude-host "$@"
+    if [[ -n "$CLAUDE_MODEL" ]]; then
+        exec claude-host --model "$CLAUDE_MODEL" "$@"
+    else
+        exec claude-host "$@"
+    fi
 fi
 
 echo -e "${BLUE}AI Agent Container${NC}"

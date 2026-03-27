@@ -78,13 +78,6 @@ fi
 [ -f /opt/claude-config/zshrc     ] && cp /opt/claude-config/zshrc     /home/agent/.zshrc
 [ -f /opt/claude-config/tmux.conf ] && cp /opt/claude-config/tmux.conf /home/agent/.tmux.conf
 
-# --- Patch MCP env var placeholders in settings.json ---
-# Only needed for values embedded in URLs/strings (not MCP server env blocks,
-# which inherit the container environment directly).
-if [ -n "${BRIGHTDATA_API_KEY:-}" ]; then
-  sed -i "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g" /home/agent/.claude/settings.json
-fi
-
 # --- Credentials: populate from host file or env var ---
 # Host file always wins (ensures host re-auth propagates into the container).
 # Env var is used in headless/CI deployments where no host file exists.
@@ -134,6 +127,39 @@ if [ -n "$_BYPASS_TOKEN" ]; then
   fi
 fi
 
+# --- MCP servers: register into ~/.claude.json ---
+# mcp-servers.json is the source of truth (native .mcp.json format).
+# Each image bakes only the servers it supports (browsing adds puppeteer/playwright).
+# Substitute placeholders, drop unresolved entries, write to both:
+#   - top-level mcpServers (for when Anthropic fixes the user-scope bug)
+#   - projects["/workspace"].mcpServers (workaround: Claude reads project-level entries)
+# This block runs after onboarding so claude -p "ok" cannot overwrite these entries.
+# Project-specific .mcp.json files in /workspace still work alongside these.
+MCP_FILE=/opt/claude-config/mcp-servers.json
+if [ -f "$MCP_FILE" ]; then
+  mcp_raw=$(cat "$MCP_FILE")
+  [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
+    mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g")
+
+  # Drop any entry with an unresolved placeholder
+  mcp_filter='.mcpServers | to_entries | map(select(.value | tostring | test("__[A-Z_]+__") | not)) | from_entries'
+
+  mcp_servers=$(printf '%s' "$mcp_raw" | jq "$mcp_filter")
+  tmp=$(mktemp)
+  # Write servers to user-scope top-level mcpServers.
+  # Also remove empty mcpServers ({}) from any project entries — Claude Code uses project-level
+  # mcpServers as an override and an empty {} silently shadows the global user-scope servers.
+  jq --argjson mcp "$mcp_servers" '
+    .mcpServers = $mcp |
+    if .projects then
+      .projects |= with_entries(
+        if (.value.mcpServers // {}) == {} then del(.value.mcpServers) else . end
+      )
+    else . end
+  ' "$CLAUDE_JSON" > "$tmp" && mv "$tmp" "$CLAUDE_JSON"
+  chown agent:agent "$CLAUDE_JSON"
+fi
+
 # --- Skill profiles: merge extra plugins into settings.json ---
 # Starts with the default plugins baked into settings.json, then adds profiles
 # from two sources (combined, deduplicated):
@@ -169,18 +195,18 @@ if [ -f "$PROFILES_FILE" ]; then
   fi
 fi
 
-# --- Conditionally strip browser MCP servers if not in browsing image ---
-if ! command -v chromium &>/dev/null && [ -f /home/agent/.claude/settings.json ]; then
-  # Remove puppeteer and playwright entries since browser isn't available
-  jq 'del(.mcpServers.puppeteer, .mcpServers.playwright)' /home/agent/.claude/settings.json > /tmp/settings.json.tmp \
-    && mv /tmp/settings.json.tmp /home/agent/.claude/settings.json 2>/dev/null || true
-fi
-
 # --- Fix ownership after all copies (cp runs as root, so new files are root-owned) ---
 chown -R agent:agent /home/agent/.claude 2>/dev/null || true
 
 # --- Lock down permissions on .claude directory ---
 chmod -R 700 /home/agent/.claude 2>/dev/null || true
+
+# --- Unset build-time npm hardening env vars ---
+# These are set in the Dockerfile for supply-chain security during image builds,
+# but Docker ENV persists into the running container. At runtime they break npx
+# installs: IGNORE_SCRIPTS suppresses lifecycle scripts that finalize package
+# dist files, and MINIMUM_RELEASE_AGE can silently reject recent transitive deps.
+unset NPM_CONFIG_IGNORE_SCRIPTS NPM_CONFIG_MINIMUM_RELEASE_AGE
 
 # --- Drop to agent user and hand off to the requested command ---
 # No exec — shell must stay alive so the EXIT trap fires and saves ~/.claude.json

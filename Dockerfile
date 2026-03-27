@@ -94,12 +94,15 @@ COPY claude-config/tmux.conf /home/agent/.tmux.conf
 RUN chown agent:agent /home/agent/.zshrc /home/agent/.tmux.conf
 
 # Copy config files and entrypoint
+# mcp-servers.json is excluded from lite — MCP packages are not installed here.
+# The base stage re-adds it so the entrypoint can register servers at startup.
 COPY claude-config/ /opt/claude-config/
 COPY entrypoint.sh /opt/entrypoint.sh
 # Strip Windows CRLF line endings so shebangs work on Linux
 RUN find /opt/claude-config -name "*.sh" -exec sed -i 's/\r//' {} + \
     && sed -i 's/\r//' /opt/entrypoint.sh \
-    && chmod +x /opt/entrypoint.sh /opt/claude-config/hooks/*.sh 2>/dev/null || true
+    && chmod +x /opt/entrypoint.sh /opt/claude-config/hooks/*.sh 2>/dev/null || true \
+    && rm -f /opt/claude-config/mcp-servers.json
 
 WORKDIR /workspace
 
@@ -164,22 +167,26 @@ RUN npm install -g \
     @modelcontextprotocol/server-sequential-thinking \
     @upstash/context7-mcp
 
+# Bake MCP server definitions — entrypoint registers them into ~/.claude.json at startup
+COPY claude-config/mcp-servers.json /opt/claude-config/mcp-servers.json
+
 # Install Python AI tools in a venv (avoids conflict with Ubuntu's system pip)
 ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:${PATH}"
 
-RUN pip install --no-cache-dir \
-    aider-chat \
-    shell-gpt \
-    openai \
-    anthropic \
-    google-generativeai \
-    google-ai-generativelanguage \
+RUN pip install --no-cache-dir setuptools && \
+    pip install --no-cache-dir \
+    # aider-chat \
+    # shell-gpt \
+    # openai \
+    # anthropic \
+    # google-generativeai \
+    # google-ai-generativelanguage \
     mcp-server-fetch
 
 # Install Fabric (AI patterns framework)
-RUN go install github.com/danielmiessler/fabric/cmd/fabric@v1.4.434
+# RUN go install github.com/danielmiessler/fabric/cmd/fabric@v1.4.434
 
 # Install gopls (required by gopls-lsp Claude plugin)
 RUN go install golang.org/x/tools/gopls@v0.21.1
@@ -207,6 +214,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g \
     @modelcontextprotocol/server-puppeteer \
     @playwright/mcp
+
+# Add browser MCP servers to the registry (base image has non-browser servers only)
+RUN jq '.mcpServers += {"puppeteer":{"command":"npx","args":["-y","@modelcontextprotocol/server-puppeteer"]},"playwright":{"command":"npx","args":["-y","@playwright/mcp","--headless"]}}' \
+    /opt/claude-config/mcp-servers.json > /tmp/mcp-servers.json \
+    && mv /tmp/mcp-servers.json /opt/claude-config/mcp-servers.json
 
 # Install Python browser deps (venv inherited from base)
 RUN pip install --no-cache-dir \
