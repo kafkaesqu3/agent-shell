@@ -23,8 +23,16 @@ install_path() {
   ln -sf "$SCRIPT_DIR/ai-agent.sh" "$LOCAL_BIN/ai-agent"
   ok "Symlinked ai-agent → $LOCAL_BIN/ai-agent"
 
-  # claude wrapper: route to container by default, --host for local
+  # claude wrapper: install into a dedicated bin dir that precedes ~/.local/bin in PATH.
+  # This survives Claude self-updates, which only touch ~/.local/bin/claude (via symlink).
+  local agent_bin="$HOME/.local/share/ai-agent/bin"
+  mkdir -p "$agent_bin"
   chmod +x "$SCRIPT_DIR/claude-wrapper.sh"
+  cp "$SCRIPT_DIR/claude-wrapper.sh" "$agent_bin/claude"
+  chmod +x "$agent_bin/claude"
+  ok "claude wrapper installed at $agent_bin/claude"
+
+  # Back up the real claude binary as claude-host (once) so --host can invoke it.
   local real_claude
   real_claude="$(command -v claude 2>/dev/null || true)"
   if [ -z "$real_claude" ]; then
@@ -32,33 +40,41 @@ install_path() {
       if [ -x "$_try" ]; then real_claude="$_try"; break; fi
     done
   fi
-
   if [ -n "$real_claude" ]; then
-    if grep -q "ai-agent" "$real_claude" 2>/dev/null; then
-      cp "$SCRIPT_DIR/claude-wrapper.sh" "$real_claude"
-      ok "claude wrapper updated"
-    else
-      local claude_dir
-      claude_dir="$(dirname "$real_claude")"
-      cp "$real_claude" "$claude_dir/claude-host"
-      chmod +x "$claude_dir/claude-host"
-      cp "$SCRIPT_DIR/claude-wrapper.sh" "$real_claude"
-      chmod +x "$real_claude"
-      ok "claude wrapper installed (original binary → claude-host)"
+    local claude_dir
+    claude_dir="$(dirname "$real_claude")"
+    # Resolve symlink to get the actual binary for the backup.
+    local real_binary
+    real_binary="$(readlink -f "$real_claude" 2>/dev/null || echo "$real_claude")"
+    # Only back up if the resolved path is a real binary (not already a wrapper script).
+    if ! head -1 "$real_binary" 2>/dev/null | rg -q "bash|sh"; then
+      if [ ! -x "$claude_dir/claude-host" ]; then
+        cp "$real_binary" "$claude_dir/claude-host"
+        chmod +x "$claude_dir/claude-host"
+        ok "claude binary backed up → $claude_dir/claude-host"
+      else
+        ok "claude-host already exists at $claude_dir/claude-host"
+      fi
     fi
   else
-    cp "$SCRIPT_DIR/claude-wrapper.sh" "$LOCAL_BIN/claude"
-    chmod +x "$LOCAL_BIN/claude"
-    warn "claude not found — wrapper installed at $LOCAL_BIN/claude (install claude first, re-run)"
+    warn "claude binary not found — install Claude Code then re-run install.sh"
   fi
 
-  # PATH export
-  if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
+  # PATH export: agent_bin must come before LOCAL_BIN so the wrapper shadows the real claude.
+  if ! rg -q "ai-agent/bin" "$profile" 2>/dev/null; then
     { echo ""; echo "# AI Agent Shell — added by install.sh"
-      echo "export PATH=\"\$HOME/.local/bin:\$PATH\""; } >> "$profile"
+      echo "export PATH=\"\$HOME/.local/share/ai-agent/bin:\$HOME/.local/bin:\$PATH\""; } >> "$profile"
     ok "PATH updated in $profile (run: source $profile)"
   else
-    ok "$LOCAL_BIN already in PATH"
+    ok "ai-agent/bin already in PATH ($profile)"
+  fi
+
+  # Auto-add shell alias so interactive shells route claude → ai-agent.
+  if ! rg -q "alias claude='ai-agent'" "$profile" 2>/dev/null; then
+    echo "alias claude='ai-agent'" >> "$profile"
+    ok "alias claude='ai-agent' added to $profile"
+  else
+    ok "claude alias already in $profile"
   fi
 
   # .env template
@@ -80,6 +96,9 @@ install_path() {
 # fnm (Node.js version manager)
 export PATH="$HOME/.local/share/fnm:$PATH"
 eval "$(fnm env 2>/dev/null)" || true
+
+# AI Agent Shell: wrapper bin must precede ~/.local/bin so it shadows the real claude binary.
+export PATH="$HOME/.local/share/ai-agent/bin:$HOME/.local/bin:$PATH"
 
 # claude is an alias for ai-agent — all routing (host/Docker, profiles, --yolo)
 # is handled there.
