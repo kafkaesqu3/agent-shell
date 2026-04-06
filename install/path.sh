@@ -52,14 +52,33 @@ install_path() {
     warn "claude not found — wrapper installed at $LOCAL_BIN/claude (install claude first, re-run)"
   fi
 
-  # PATH export
-  if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
-    { echo ""; echo "# AI Agent Shell — added by install.sh"
-      echo "export PATH=\"\$HOME/.local/bin:\$PATH\""; } >> "$profile"
-    ok "PATH updated in $profile (run: source $profile)"
-  else
-    ok "$LOCAL_BIN already in PATH"
-  fi
+  # Helper: append a block to the profile only if a marker string isn't already present
+  _append_once() {
+    local marker="$1" block="$2"
+    if ! grep -qF "$marker" "$profile" 2>/dev/null; then
+      printf '\n%s\n' "$block" >> "$profile"
+      ok "  Written to $profile: $marker"
+    else
+      ok "  Already in $profile: $marker"
+    fi
+  }
+
+  echo -e "${BOLD}--- Writing shell config to $profile ---${NC}"
+
+  _append_once '.local/bin' \
+'# AI Agent Shell — added by install.sh
+export PATH="$HOME/.local/bin:$PATH"'
+
+  _append_once 'local/share/fnm' \
+'# fnm (Node.js version manager)
+export PATH="$HOME/.local/share/fnm:$PATH"
+eval "$(fnm env 2>/dev/null)" || true'
+
+  _append_once "alias claude='ai-agent'" \
+"# claude routes through ai-agent (host/Docker, profiles, --yolo)
+alias claude='ai-agent'"
+
+  ok "Run: source $profile"
 
   # .env template
   if [ ! -f "$CONFIG_DIR/.env" ]; then
@@ -67,42 +86,15 @@ install_path() {
     info "Copied .env template → $CONFIG_DIR/.env (edit with your API keys)"
   fi
 
-  # Shell snippets
   echo ""
-  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${BOLD}Shell config changes required${NC}"
-  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo ""
-  echo -e "${BOLD}1. ${BLUE}~/.zshrc${NC} or ${BLUE}~/.bashrc${NC}"
-  echo -e "   ${YELLOW}Add these lines if not already present:${NC}"
-  echo ""
-  cat << 'SHELLFUNC'
-# fnm (Node.js version manager)
-export PATH="$HOME/.local/share/fnm:$PATH"
-eval "$(fnm env 2>/dev/null)" || true
-
-# claude is an alias for ai-agent — all routing (host/Docker, profiles, --yolo)
-# is handled there.
-alias claude='ai-agent'
-SHELLFUNC
-
-  echo ""
-  echo -e "${BOLD}2. ${BLUE}PowerShell profile${NC} (Documents/PowerShell/Microsoft.PowerShell_profile.ps1)"
-  echo -e "   ${YELLOW}For Windows users calling claude from PowerShell via WSL:${NC}"
+  echo -e "${BOLD}Windows/PowerShell users:${NC} add to Documents/PowerShell/Microsoft.PowerShell_profile.ps1"
   echo ""
   cat << 'PSFUNC'
-# claude and ai-agent are interchangeable entry points — all routing
-# (host/Docker, profiles, --yolo) is handled by ai-agent in WSL.
 function claude   { wsl ai-agent @args }
 function ai-agent { wsl ai-agent @args }
 PSFUNC
-
   echo ""
-  echo -e "  ${YELLOW}Tip:${NC} 'claude' and 'ai-agent' are interchangeable — both route through ai-agent."
-  echo -e "        Default: Docker (isolated, reproducible)."
-  echo -e "        'claude --host' / 'ai-agent --host': run directly on this machine."
-  echo -e "        'claude --work' / '--local [MODEL]': layer a credential profile on top."
-  echo -e "        '--yolo': enable --dangerously-skip-permissions (works with all modes)."
+  echo -e "  ${YELLOW}Tip:${NC} 'claude --host' runs locally · '--work/--local' layers credentials · '--yolo' skips permissions"
   echo ""
 }
 
