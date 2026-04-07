@@ -16,7 +16,8 @@ install_mcp() {
     @modelcontextprotocol/server-sequential-thinking \
     @upstash/context7-mcp \
     @modelcontextprotocol/server-puppeteer \
-    @playwright/mcp 2>&1 | tail -3
+    @playwright/mcp \
+    exa-mcp-server 2>&1 | tail -3
   ok "npm MCP servers installed"
 
   # mcp-server-fetch — isolated venv avoids Ubuntu 24.04 system pip conflict
@@ -46,6 +47,8 @@ install_mcp() {
     mcp_raw=$(cat "$mcp_file")
     [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
       mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g")
+    [ -n "${EXA_API_KEY:-}" ] && \
+      mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__EXA_API_KEY__|${EXA_API_KEY}|g")
 
     local mcp_servers
     mcp_servers=$(printf '%s' "$mcp_raw" | jq '
