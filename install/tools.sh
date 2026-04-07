@@ -21,6 +21,18 @@ _install_python_tools() {
   elif cmd_exists pip3; then
     pip3 install --upgrade ruff pytest pip-audit 2>/dev/null || warn "Python tools via pip3 skipped"
   fi
+
+  # graphify — codebase knowledge graph tool (PyPI package temporarily named graphifyy)
+  if cmd_exists pip3 || cmd_exists uv; then
+    if cmd_exists uv; then
+      uv pip install graphifyy 2>/dev/null && graphify install 2>/dev/null \
+        && ok "graphify installed" || warn "graphify skipped"
+    else
+      pip3 install graphifyy 2>/dev/null && graphify install 2>/dev/null \
+        && ok "graphify installed" || warn "graphify skipped"
+    fi
+  fi
+
   ok "Python tools installed"
 }
 

@@ -183,7 +183,14 @@ RUN pip install --no-cache-dir setuptools && \
     # anthropic \
     # google-generativeai \
     # google-ai-generativelanguage \
-    mcp-server-fetch
+    mcp-server-fetch \
+    graphifyy
+
+# Register graphify slash command into /opt/claude-config/commands/ so entrypoint.sh
+# picks it up at startup (agent user needed because graphify install writes to ~/.claude/)
+RUN su -s /bin/bash agent -c \
+      'HOME=/home/agent PATH=/opt/venv/bin:${PATH} graphify install' \
+    && cp /home/agent/.claude/commands/graphify.md /opt/claude-config/commands/graphify.md 2>/dev/null || true
 
 # Install Fabric (AI patterns framework)
 # RUN go install github.com/danielmiessler/fabric/cmd/fabric@v1.4.434

@@ -75,6 +75,7 @@ ai-agent                     # interactive shell in Docker (no claude injection)
 | `sgpt` | Shell-GPT — natural language shell commands |
 | `gemini` | Google Gemini CLI |
 | `fabric` | AI patterns framework |
+| `/graphify` | Codebase knowledge graph — AST + semantic analysis, interactive HTML viz _(base/full image only)_ |
 
 ### MCP Servers (Claude Code extensions)
 | Server | Purpose |
@@ -108,6 +109,24 @@ ai-agent                     # interactive shell in Docker (no claude injection)
 - **Onboarding bypass** — headless containers start non-interactively when `CLAUDE_CODE_OAUTH_TOKEN` is set
 - **Telemetry disabled** — no usage reporting or feedback surveys
 - **Always-thinking mode** enabled
+
+### Slash Commands
+
+| Command | Description |
+|---------|-------------|
+| `/fix-issue <number>` | End-to-end GitHub issue workflow: research → plan → branch → implement → test → self-review → commit → PR → issue comment |
+| `/review-pr <number>` | Multi-agent PR review (toolkit agents + Codex + Gemini in parallel), fix findings, verify quality pipeline, push, and post review summary |
+| `/merge-dependabot <repo>` | Evaluate open Dependabot PRs: transitive dep analysis, parallel build/test, dependency-aware batching, auto-merge PASSing PRs |
+| `/commit` | Squash `claude: session checkpoint` commits and create a clean conventional commit |
+| `/setup-config` | Interactive installer — copies `claude-config/` files into `~/.claude/` with merge/diff prompts for existing files |
+| `/autoprompt <idea>` | Turn a rough idea into an optimized, ready-to-use prompt; returns the prompt and an explanation of what was improved |
+| `/deepthink <problem>` | Seven-layer reasoning protocol: restate → map solution space → stress-test → find crux → check blind spots → commit → reversal check |
+| `/chainlogic <problem>` | Fully auditable numbered reasoning chain with explicit assumptions, judgment calls flagged, and an audit summary |
+| `/godmode <question>` | Unconstrained answer depth — surfaces edge cases, counterarguments, expert disagreements, undocumented gotchas, and second-order effects normally omitted |
+| `/l99 <question>` | Expert-level response assuming senior practitioner audience — no definitions, no scaffolding, direct opinion and specific citations |
+| `/ooda <problem>` | OODA military decision framework: Observe → Orient → Decide → Act, ending with a single bolded first move |
+| `/ghost <text>` | Rewrite text to strip AI writing patterns and make it sound human-written |
+| `/graphify [path]` | Build a queryable knowledge graph of a codebase via AST parsing + parallel Claude subagents; outputs interactive HTML, JSON graph, and audit report _(base/full image only)_ |
 
 ---
 
