@@ -147,6 +147,8 @@ if [ -f "$MCP_FILE" ]; then
   mcp_raw=$(cat "$MCP_FILE")
   [ -n "${BRIGHTDATA_API_KEY:-}" ] && \
     mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__BRIGHTDATA_API_KEY__|${BRIGHTDATA_API_KEY}|g")
+  [ -n "${EXA_API_KEY:-}" ] && \
+    mcp_raw=$(printf '%s' "$mcp_raw" | sed "s|__EXA_API_KEY__|${EXA_API_KEY}|g")
 
   # Drop any entry with an unresolved placeholder
   mcp_filter='.mcpServers | to_entries | map(select(.value | tostring | test("__[A-Z_]+__") | not)) | from_entries'

@@ -4,7 +4,6 @@ Global instructions for all projects. Project-specific CLAUDE.md files override 
 
 Language-specific standards: see CLAUDE.python.md, CLAUDE.node.md, CLAUDE.rust.md (loaded automatically when those languages are detected in the project).
 
-- Prefer Exa AI (`mcp__exa__web_search_exa`) over `WebSearch` for all web searches
 - Use skills proactively when they match the task -- suggest relevant ones, don't block on them
 
 ## Philosophy
@@ -63,13 +62,17 @@ When adding dependencies, CI actions, or tool versions, always look up the curre
 Pin actions to SHA hashes with version comments: `actions/checkout@<full-sha>  # vX.Y.Z` (use `persist-credentials: false`). Configure Dependabot with 7-day cooldowns and grouped updates.
 
 ## Research Tools
- Use BrightData MCP as the primary tool for all web research tasks. Prefer BrightData over `brave_web_search` and `WebFetch` because:
-  | Task | Tool |
-  |------|------|
-  | Search / discovery | `mcp__brightdata__search_engine` |
-  | Scrape a single page | `mcp__brightdata__scrape_as_markdown` |
-  | Scrape multiple pages | `mcp__brightdata__scrape_batch` |
-  | Batch searches | `mcp__brightdata__search_engine_batch` |
+
+Use BrightData MCP as the primary tool for web research. Prefer it over `brave_web_search` and `WebFetch`.
+Use Exa (`mcp__exa__web_search_exa`) only for semantic/similarity search where conceptual relevance matters more than broad coverage.
+
+| Task | Tool |
+|------|------|
+| General search / discovery | `mcp__brightdata__search_engine` |
+| Scrape a single page | `mcp__brightdata__scrape_as_markdown` |
+| Scrape multiple pages | `mcp__brightdata__scrape_batch` |
+| Batch searches | `mcp__brightdata__search_engine_batch` |
+| Semantic / similarity search | `mcp__exa__web_search_exa` |
   
 Always use Context7 MCP when I need library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.
 
