@@ -56,7 +56,10 @@ RUN sed -i 's/\r//' /usr/local/bin/claude && chmod +x /usr/local/bin/claude
 ENV SHELL=/bin/zsh
 
 # Create non-root user with passwordless sudo
-RUN useradd -m -s /bin/zsh agent \
+# Ubuntu 24.04 ships with a default 'ubuntu' user at UID 1000; remove it so
+# 'agent' can claim UID 1000 and the entrypoint's usermod remapping works correctly.
+RUN userdel -r ubuntu 2>/dev/null || true
+RUN useradd -m -u 1000 -s /bin/zsh agent \
     && echo "agent ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/agent \
     && chmod 0440 /etc/sudoers.d/agent \
     && mkdir -p /home/agent/.local/bin \

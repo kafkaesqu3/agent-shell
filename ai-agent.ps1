@@ -164,7 +164,7 @@ if ($ProfileName -ne "") {
 if ($HostMode) {
     $check = wsl command -v claude-host 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "claude-host not found in WSL — run install.sh --path to set up" -ForegroundColor Red
+        Write-Host "claude-host not found in WSL - run install.sh --path to set up" -ForegroundColor Red
         exit 1
     }
     $wslEnvArgs = @()
@@ -268,7 +268,7 @@ if (Test-Path $ClaudeSettings) {
     Write-Host "Mounting host settings.json" -ForegroundColor Green
 }
 
-# Optional: host credentials — staged outside the named volume so the
+# Optional: host credentials - staged outside the named volume so the
 # entrypoint can copy them in (bind-mounting a file inside a named-volume
 # directory is unreliable; the volume wins).
 $ClaudeCreds = Join-Path $ClaudeHome ".credentials.json"

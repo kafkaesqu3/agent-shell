@@ -15,9 +15,16 @@ if [ "$(id -u agent)" != "$HOST_UID" ] || [ "$(id -g agent)" != "$HOST_GID" ]; t
 fi
 
 # --- Fix volume ownership (volume may be root-owned on first run) ---
-# Do NOT chown /workspace — it is a bind-mounted host directory and chowning it
-# would corrupt file ownership on the host.
+# Do NOT chown /workspace on Linux — it is a bind-mounted host directory and
+# chowning it would corrupt file ownership on the host.
+# On Windows (Docker Desktop), bind-mounted files always appear as root-owned
+# inside the container regardless of HOST_UID; chown there does not affect NTFS
+# ownership on the host, so it is safe to remap ownership to the agent user.
 chown -R agent:agent /home/agent/.config 2>/dev/null || true
+_ws_uid=$(stat -c %u /workspace 2>/dev/null || echo "0")
+if [ "$_ws_uid" = "0" ] && [ "$HOST_UID" != "0" ]; then
+  chown -R "${HOST_UID}:${HOST_GID}" /workspace 2>/dev/null || true
+fi
 
 # --- Persist ~/.claude.json across restarts via the named volume ---
 # ~/.claude.json sits next to ~/.claude/ and is not covered by the volume mount,
