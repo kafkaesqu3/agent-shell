@@ -8,6 +8,7 @@
 #   --config        Install Claude Code config files
 #   --tools         Install fnm/node/claude + OS dev tools
 #   --mcp           Install MCP servers
+#   --browsing      Install Chromium + browser MCP servers (puppeteer, playwright)
 #   --agents        Install Claude Code agent definitions
 #   --docker        Build Docker images
 #   --path          Set up symlinks, claude wrapper, shell snippets
@@ -49,6 +50,7 @@ _usage() {
   echo "  --config        Install Claude Code binary, plugins, and config files"
   echo "  --tools         Install fnm/node/claude + OS dev tools"
   echo "  --mcp           Install MCP servers"
+  echo "  --browsing      Install Chromium + browser MCP servers (puppeteer, playwright)"
   echo "  --agents        Install Claude Code agent definitions"
   echo "  --docker        Build Docker images"
   echo "  --path          Set up symlinks, claude wrapper, shell snippets"
@@ -63,7 +65,9 @@ _run() {
   # shellcheck source=install/tools.sh
   [[ "$do_tools"  == true ]] && { source "$SCRIPT_DIR/install/tools.sh";  install_tools;  }
   # shellcheck source=install/mcp.sh
-  [[ "$do_mcp"    == true ]] && { source "$SCRIPT_DIR/install/mcp.sh";    install_mcp;    }
+  [[ "$do_mcp"      == true ]] && { source "$SCRIPT_DIR/install/mcp.sh";      install_mcp;      }
+  # shellcheck source=install/browsing.sh
+  [[ "$do_browsing" == true ]] && { source "$SCRIPT_DIR/install/browsing.sh"; install_browsing; }
   # shellcheck source=install/agents.sh
   [[ "$do_agents" == true ]] && { source "$SCRIPT_DIR/install/agents.sh"; install_agents; }
   # shellcheck source=install/docker.sh
@@ -82,12 +86,13 @@ _menu() {
   echo "  5) Docker images"
   echo "  6) PATH + shell aliases"
   echo "  7) Claude Code agents"
+  echo "  8) Browsing (Chromium + browser MCP servers)"
   echo "  q) Quit"
   echo ""
-  read -rp "Select (1-7, q, or multiple e.g. '2 3'): " selection
+  read -rp "Select (1-8, q, or multiple e.g. '2 3'): " selection
   echo ""
 
-  local do_config=false do_tools=false do_mcp=false do_docker=false do_path=false do_agents=false
+  local do_config=false do_tools=false do_mcp=false do_docker=false do_path=false do_agents=false do_browsing=false
   for token in $selection; do
     case "$token" in
       1) do_config=true; do_tools=true; do_mcp=true; do_agents=true; do_docker=true; do_path=true ;;
@@ -97,6 +102,7 @@ _menu() {
       5) do_docker=true ;;
       6) do_path=true ;;
       7) do_agents=true ;;
+      8) do_browsing=true ;;
       q) echo "Quit."; exit 0 ;;
       *) warn "Unknown option: $token" ;;
     esac
@@ -115,7 +121,7 @@ if [[ $# -eq 0 ]]; then
 fi
 
 do_config=false; do_tools=false; do_mcp=false; do_docker=false; do_path=false
-do_agents=false; skip_docker=false; do_all=false
+do_agents=false; do_browsing=false; skip_docker=false; do_all=false
 
 for arg in "$@"; do
   case "$arg" in
@@ -123,6 +129,7 @@ for arg in "$@"; do
     --config)      do_config=true ;;
     --tools)       do_tools=true ;;
     --mcp)         do_mcp=true ;;
+    --browsing)    do_browsing=true ;;
     --docker)      do_docker=true ;;
     --path)        do_path=true ;;
     --agents)      do_agents=true ;;

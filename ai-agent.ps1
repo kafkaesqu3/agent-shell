@@ -205,9 +205,39 @@ if ($UseRm) {
     if (-not $ContainerName) {
         $ContainerName = (Get-Location | Split-Path -Leaf)
     }
+    Write-Host "Container name: $ContainerName" -ForegroundColor Cyan
+
+    # If container already exists, exec into it instead of creating a new one
+    $existing = docker ps -a --format '{{.Names}}' 2>$null | Where-Object { $_ -eq $ContainerName }
+    if ($existing) {
+        Write-Host "Reusing existing container: $ContainerName" -ForegroundColor Yellow
+        $running = docker ps --format '{{.Names}}' 2>$null | Where-Object { $_ -eq $ContainerName }
+        if (-not $running) {
+            $startResult = docker start $ContainerName 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "Stopped container could not be restarted (stale mounts?), removing and recreating..." -ForegroundColor Yellow
+                docker rm $ContainerName | Out-Null
+                # Fall through to docker run below
+            } else {
+                if ($PassArgs.Count -gt 0) {
+                    & docker exec -it $ContainerName @PassArgs
+                } else {
+                    & docker exec -it $ContainerName /bin/bash
+                }
+                exit $LASTEXITCODE
+            }
+        } else {
+            if ($PassArgs.Count -gt 0) {
+                & docker exec -it $ContainerName @PassArgs
+            } else {
+                & docker exec -it $ContainerName /bin/bash
+            }
+            exit $LASTEXITCODE
+        }
+    }
+
     $DockerArgs += "--name"
     $DockerArgs += $ContainerName
-    Write-Host "Container name: $ContainerName" -ForegroundColor Cyan
 }
 
 # Load .env and pass vars

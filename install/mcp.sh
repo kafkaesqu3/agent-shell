@@ -15,8 +15,6 @@ install_mcp() {
     brave-search-mcp \
     @modelcontextprotocol/server-sequential-thinking \
     @upstash/context7-mcp \
-    @modelcontextprotocol/server-puppeteer \
-    @playwright/mcp \
     exa-mcp-server 2>&1 | tail -3
   ok "npm MCP servers installed"
 
