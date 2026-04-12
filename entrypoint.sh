@@ -60,6 +60,13 @@ statsig/
 GITIGNORE
 fi
 
+# --- Seed .agent into workspace .gitignore ---
+# The .agent/ directory holds per-workspace Claude state (config, memory, etc.)
+# and should never be committed. Append only if not already present.
+if [ -d /workspace ] && ! grep -qxF '.agent' /workspace/.gitignore 2>/dev/null; then
+  printf '\n# Claude Code agent state\n.agent\n' >> /workspace/.gitignore
+fi
+
 # --- Credentials: populate from host file or env var ---
 # Host file always wins (ensures host re-auth propagates into the container).
 # Env var is used in headless/CI deployments where no host file exists.
