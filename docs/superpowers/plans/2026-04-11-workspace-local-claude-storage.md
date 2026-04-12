@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the global `ai-agent-claude` named Docker volume with a per-project named volume plus a workspace bind mount for conversation history, so that history/memories are accessible as files in the workspace while credentials stay in the volume.
+**Goal:** Replace the global `ai-agent-claude` named Docker volume with a per-workspace bind mount so that each project's Claude config, history, and memories live in `$(pwd)/.agent/`, seeded from a golden image on first run.
 
-**Architecture:** Each container gets a per-project named volume `ai-agent-claude-<name>` for all state except conversation history. A second bind mount overlaps `/home/agent/.claude/projects/` pointing to `$(pwd)/.agent/` on the host. Docker overlapping mount semantics mean the bind mount takes precedence for that subpath.
+**Architecture:** The Dockerfile snapshots the baked `/home/agent/.claude/` (including plugins) to `/opt/claude-seed/` after installation. The entrypoint seeds new workspaces from this snapshot using `cp -rn` (no-clobber), so existing workspaces are never overwritten. Launchers replace the named volume with `$(pwd)/.agent:/home/agent/.claude`.
 
-**Tech Stack:** Bash, PowerShell, Docker
+**Tech Stack:** Bash, PowerShell, Docker, jq
 
 ---
 
@@ -14,60 +14,187 @@
 
 | File | Change |
 |------|--------|
-| `ai-agent.sh` | Remove `VOLUME_NAME` constant and `sync` subcommand; add per-project volume name derivation; add `mkdir -p .agent`; add bind mount for `projects/` |
-| `ai-agent.ps1` | Same changes, PowerShell syntax |
-| `docs/superpowers/specs/2026-04-11-workspace-local-claude-storage-design.md` | Already updated to final design |
-
-`entrypoint.sh` — no changes needed.
+| `Dockerfile` | Add seed snapshot after plugin installation |
+| `entrypoint.sh` | Add seed step + gitignore; remove per-file cp calls |
+| `ai-agent.sh` | Bind mount; remove named volume + host config mounts + sync |
+| `ai-agent.ps1` | Same changes in PowerShell |
 
 ---
 
-### Task 1: Update `ai-agent.sh`
+### Task 1: Add seed snapshot to Dockerfile
+
+**Files:**
+- Modify: `Dockerfile`
+
+The named volume currently auto-seeds from the image (Docker behaviour). Bind mounts don't.
+We need to snapshot the baked `/home/agent/.claude/` content (including plugins) to
+`/opt/claude-seed/` so the entrypoint can seed new workspaces.
+
+- [ ] **Step 1: Find the right insertion point**
+
+Read `Dockerfile`. The plugin install block ends around line 92 with the closing `'`. The
+snapshot must happen AFTER plugin installation but BEFORE the `WORKDIR /workspace` line.
+
+- [ ] **Step 2: Add the snapshot**
+
+After the closing `'` of the plugin install `RUN` block (after line 92), add:
+
+```dockerfile
+# Snapshot baked .claude/ (plugins + initial config) so entrypoint can seed new workspaces.
+# Bind mounts don't auto-seed from image content the way named volumes do.
+RUN cp -r /home/agent/.claude /opt/claude-seed
+```
+
+- [ ] **Step 3: Verify Dockerfile syntax**
+
+```bash
+docker build --target lite -t ai-agent:lite-test . 2>&1 | tail -5
+```
+
+Expected: build succeeds (or fails only at transient network steps, not syntax errors).
+
+- [ ] **Step 4: Verify snapshot exists in image**
+
+```bash
+docker run --rm ai-agent:lite-test ls /opt/claude-seed/
+```
+
+Expected: output includes `plugins/` and any config files baked during build.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Dockerfile
+git commit -m "feat: snapshot baked .claude/ to /opt/claude-seed for workspace seeding"
+```
+
+---
+
+### Task 2: Update entrypoint.sh
+
+**Files:**
+- Modify: `entrypoint.sh`
+
+Three changes:
+1. Add seed step (replaces individual per-file cp calls)
+2. Add auto-gitignore
+3. Remove the individual `cp /opt/claude-config/...` calls for config files
+
+- [ ] **Step 1: Read the current entrypoint**
+
+Read `entrypoint.sh` in full. Note the section labelled `# --- Config files: always sync from image ---` (around line 47). This is the block to replace.
+
+- [ ] **Step 2: Replace the config copy block with seed step + gitignore**
+
+Remove the entire `# --- Config files: always sync from image ---` section:
+```bash
+# --- Config files: always sync from image ---
+if [ -f /opt/host-config/CLAUDE.md ]; then
+  cp /opt/host-config/CLAUDE.md /home/agent/.claude/CLAUDE.md
+else
+  cp /opt/claude-config/CLAUDE.md /home/agent/.claude/CLAUDE.md
+fi
+cp /opt/claude-config/CLAUDE.*.md /home/agent/.claude/ 2>/dev/null || true
+cp /opt/claude-config/settings.json /home/agent/.claude/settings.json
+if [ -f /opt/claude-config/statusline.sh ]; then
+  cp /opt/claude-config/statusline.sh /home/agent/.claude/statusline.sh
+  chmod +x /home/agent/.claude/statusline.sh
+fi
+```
+
+And remove the subsequent `# --- Copy slash commands ---`, `# --- Copy hook scripts ---`,
+and `# --- Copy agent definitions ---` sections:
+```bash
+# --- Copy slash commands ---
+if [ -d /opt/claude-config/commands ]; then
+  mkdir -p /home/agent/.claude/commands
+  cp /opt/claude-config/commands/*.md /home/agent/.claude/commands/
+fi
+
+# --- Copy hook scripts ---
+if [ -d /opt/claude-config/hooks ]; then
+  mkdir -p /home/agent/.claude/hooks
+  cp /opt/claude-config/hooks/*.sh /home/agent/.claude/hooks/
+  chmod +x /home/agent/.claude/hooks/*.sh
+fi
+
+# --- Copy agent definitions ---
+if [ -d /opt/claude-config/agents ]; then
+  mkdir -p /home/agent/.claude/agents
+  cp /opt/claude-config/agents/*.md /home/agent/.claude/agents/ 2>/dev/null || true
+fi
+```
+
+Replace the entire removed block with:
+```bash
+# --- Seed new workspace from golden image snapshot (no-clobber) ---
+# cp -rn skips files that already exist, so evolved workspaces are never overwritten.
+# New files added to the image snapshot propagate to existing workspaces on next start.
+if [ -d /opt/claude-seed ]; then
+  cp -rn /opt/claude-seed/. /home/agent/.claude/
+fi
+
+# --- Write .gitignore for workspace .agent/ directory (first run only) ---
+if [ ! -f /home/agent/.claude/.gitignore ]; then
+  cat > /home/agent/.claude/.gitignore << 'GITIGNORE'
+# Sensitive credentials — never commit
+.credentials.json
+claude.json
+
+# Caches — large, auto-downloaded
+plugins/
+statsig/
+GITIGNORE
+fi
+```
+
+Also remove the dotfile sync section:
+```bash
+# --- Sync shell and tmux dotfiles ---
+[ -f /opt/claude-config/zshrc     ] && cp /opt/claude-config/zshrc     /home/agent/.zshrc
+[ -f /opt/claude-config/tmux.conf ] && cp /opt/claude-config/tmux.conf /home/agent/.tmux.conf
+```
+These dotfiles are already baked into the image directly (Dockerfile `COPY` lines) — the
+entrypoint sync was redundant.
+
+- [ ] **Step 3: Verify entrypoint is valid shell**
+
+```bash
+shellcheck entrypoint.sh
+```
+
+Expected: no errors.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add entrypoint.sh
+git commit -m "feat: seed workspace from image snapshot instead of always-overwrite config copy"
+```
+
+---
+
+### Task 3: Update `ai-agent.sh`
 
 **Files:**
 - Modify: `ai-agent.sh`
 
-The goal is three concrete changes:
-1. Remove the `VOLUME_NAME` constant at the top (line 8)
-2. Remove the `sync` subcommand block and all references to it
-3. Replace the volume mount with a per-project volume + bind mount
-
-**Current sync block (lines 127–147) to remove:**
-```bash
-if [[ "${1:-}" == "sync" ]]; then
-    if [ -z "$CONTAINER_NAME" ]; then
-        CONTAINER_NAME="$(basename "$(pwd)")"
-    fi
-    if ! docker info > /dev/null 2>&1; then
-        echo -e "${RED}Docker is not running!${NC}"; exit 1
-    fi
-    mkdir -p "$HOME/.claude/projects"
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
-        echo -e "${BLUE}Syncing from running container: $CONTAINER_NAME${NC}"
-    elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
-        echo -e "${BLUE}Syncing from stopped container: $CONTAINER_NAME${NC}"
-    else
-        echo -e "${RED}Container not found: $CONTAINER_NAME${NC}"
-        echo "Specify with --name, or run from the project directory (container is named after the directory)"
-        exit 1
-    fi
-    docker cp "${CONTAINER_NAME}:/home/agent/.claude/projects/." "$HOME/.claude/projects/" 2>/dev/null || true
-    echo -e "${GREEN}Session logs synced to ~/.claude/projects/${NC}"
-    exit 0
-fi
-```
+Four changes:
+1. Remove `VOLUME_NAME` constant
+2. Remove host CLAUDE.md and settings.json override mounts (workspace owns config)
+3. Replace named volume with bind mount; add `mkdir -p .agent`
+4. Remove `sync` subcommand
 
 - [ ] **Step 1: Remove `VOLUME_NAME` constant**
 
-Open `ai-agent.sh`. Delete line 8:
+Delete line 8:
 ```bash
 VOLUME_NAME="ai-agent-claude"
 ```
-(The constant is replaced by inline derivation later in the file.)
 
 - [ ] **Step 2: Remove `sync` from usage text**
 
-In the `usage()` function, remove the sync-related lines:
+In the `usage()` function, remove:
 ```
   sync                Copy session logs from container to ~/.claude/projects/
 ```
@@ -76,49 +203,73 @@ and:
   ai-agent.sh --name myproject sync  # sync logs from named container
 ```
 
-- [ ] **Step 3: Remove `sync` subcommand block**
+- [ ] **Step 3: Remove the `sync` subcommand block**
 
-Remove the entire `if [[ "${1:-}" == "sync" ]]; then ... fi` block (currently around lines 127–147 after the constant removal). The block starts with `# Handle subcommands` and ends with `exit 0`.
+Remove the entire `# Handle subcommands` comment and the `if [[ "${1:-}" == "sync" ]]; then ... fi` block that follows it (around lines 127–147 of the original).
 
-Also remove the comment line `# Handle subcommands` immediately above it.
+- [ ] **Step 4: Remove host CLAUDE.md and settings.json override mounts**
 
-- [ ] **Step 4: Replace volume mount with per-project volume + bind mount**
+Find and remove these two blocks:
+```bash
+# Optional: host CLAUDE.md override (staged for entrypoint processing)
+if [ -f "$CLAUDE_HOME/CLAUDE.md" ]; then
+    DOCKER_ARGS+=("-v" "$CLAUDE_HOME/CLAUDE.md:/opt/host-config/CLAUDE.md:ro")
+    echo -e "${GREEN}Mounting host CLAUDE.md${NC}"
+fi
 
-Find the `# Volumes` section (currently around line 284):
+# Optional: host settings.json override
+if [ -f "$CLAUDE_HOME/settings.json" ]; then
+    DOCKER_ARGS+=("-v" "$CLAUDE_HOME/settings.json:/opt/host-config/settings.json:ro")
+    echo -e "${GREEN}Mounting host settings.json${NC}"
+fi
+```
+
+Keep the credentials mount — it is still needed:
+```bash
+# Optional: host credentials — staged outside the named volume so the
+# entrypoint can copy them in (bind-mounting a file inside a named-volume
+# directory is unreliable; the volume wins).
+if [ -f "$CLAUDE_HOME/.credentials.json" ]; then
+    DOCKER_ARGS+=("-v" "$CLAUDE_HOME/.credentials.json:/opt/host-config/.credentials.json:ro")
+    echo -e "${GREEN}Mounting host credentials${NC}"
+fi
+```
+
+- [ ] **Step 5: Replace named volume with bind mount**
+
+Find the `# Volumes` section:
 ```bash
 # Volumes
 DOCKER_ARGS+=("-v" "$(pwd):/workspace")
 DOCKER_ARGS+=("-v" "$VOLUME_NAME:/home/agent/.claude")
 ```
 
-Replace it with:
+Replace with:
 ```bash
 # Volumes
-_CLAUDE_VOL="ai-agent-claude-${CONTAINER_NAME:-$(basename "$(pwd)")}"
 mkdir -p "$(pwd)/.agent"
 DOCKER_ARGS+=("-v" "$(pwd):/workspace")
-DOCKER_ARGS+=("-v" "${_CLAUDE_VOL}:/home/agent/.claude")
-DOCKER_ARGS+=("-v" "$(pwd)/.agent:/home/agent/.claude/projects")
+DOCKER_ARGS+=("-v" "$(pwd)/.agent:/home/agent/.claude")
 ```
 
-- [ ] **Step 5: Verify the script is valid shell**
+- [ ] **Step 6: Verify**
 
 ```bash
 shellcheck ai-agent.sh
 ```
 
-Expected: no errors. Fix any issues before continuing.
+Expected: no errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add ai-agent.sh
-git commit -m "feat: scope claude storage to workspace via per-project volume and bind mount"
+git commit -m "feat: replace named volume with workspace bind mount in bash launcher"
 ```
 
 ---
 
-### Task 2: Update `ai-agent.ps1`
+### Task 4: Update `ai-agent.ps1`
 
 **Files:**
 - Modify: `ai-agent.ps1`
@@ -145,13 +296,33 @@ and:
 
 - [ ] **Step 3: Remove `sync` subcommand block**
 
-Remove the entire `if ($PassArgs.Count -gt 0 -and $PassArgs[0] -eq "sync") { ... }` block (currently around lines 113–138). It starts with `# Handle subcommands` and ends after `exit 0`.
+Remove the `# Handle subcommands` comment and the entire
+`if ($PassArgs.Count -gt 0 -and $PassArgs[0] -eq "sync") { ... }` block.
 
-Also remove the `# Handle subcommands` comment line above it.
+- [ ] **Step 4: Remove host CLAUDE.md and settings.json override mounts**
 
-- [ ] **Step 4: Replace volume mount with per-project volume + bind mount**
+Find and remove:
+```powershell
+# Optional: host CLAUDE.md override (staged for entrypoint processing)
+$ClaudeMd = Join-Path $ClaudeHome "CLAUDE.md"
+if (Test-Path $ClaudeMd) {
+    $DockerArgs += "-v"; $DockerArgs += "${ClaudeMd}:/opt/host-config/CLAUDE.md:ro"
+    Write-Host "Mounting host CLAUDE.md" -ForegroundColor Green
+}
 
-Find the `# Volumes` section (currently around line 282):
+# Optional: host settings.json override (staged for entrypoint processing)
+$ClaudeSettings = Join-Path $ClaudeHome "settings.json"
+if (Test-Path $ClaudeSettings) {
+    $DockerArgs += "-v"; $DockerArgs += "${ClaudeSettings}:/opt/host-config/settings.json:ro"
+    Write-Host "Mounting host settings.json" -ForegroundColor Green
+}
+```
+
+Keep the credentials mount.
+
+- [ ] **Step 5: Replace named volume with bind mount**
+
+Find the `# Volumes` section:
 ```powershell
 # Volumes
 $CurrentDir = (Get-Location).Path
@@ -163,99 +334,82 @@ Replace with:
 ```powershell
 # Volumes
 $CurrentDir = (Get-Location).Path
-$VolSuffix = if ($ContainerName) { $ContainerName } else { Split-Path -Leaf (Get-Location) }
-$ClaudeVol = "ai-agent-claude-$VolSuffix"
 $null = New-Item -ItemType Directory -Force -Path (Join-Path $CurrentDir ".agent")
 $DockerArgs += "-v"; $DockerArgs += "${CurrentDir}:/workspace"
-$DockerArgs += "-v"; $DockerArgs += "${ClaudeVol}:/home/agent/.claude"
-$DockerArgs += "-v"; $DockerArgs += "${CurrentDir}\.agent:/home/agent/.claude/projects"
+$DockerArgs += "-v"; $DockerArgs += "${CurrentDir}\.agent:/home/agent/.claude"
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add ai-agent.ps1
-git commit -m "feat: scope claude storage to workspace in PowerShell launcher"
+git commit -m "feat: replace named volume with workspace bind mount in PowerShell launcher"
 ```
 
 ---
 
-### Task 3: Commit updated spec
+### Task 5: Manual Verification
 
-**Files:**
-- Modify: `docs/superpowers/specs/2026-04-11-workspace-local-claude-storage-design.md` (already updated)
-
-- [ ] **Step 1: Commit the spec update**
+- [ ] **Step 1: Build the image**
 
 ```bash
-git add docs/superpowers/specs/2026-04-11-workspace-local-claude-storage-design.md
-git commit -m "docs: update storage design spec to final design"
+docker build --target lite -t ai-agent:lite .
 ```
 
----
-
-### Task 4: Manual Verification
-
-No automated tests exist for Docker launcher scripts. Verify the change works end-to-end.
-
-- [ ] **Step 1: Check `.agent/` is created on launch**
-
-From any project directory, run:
+Expected: build completes. Verify `/opt/claude-seed/` exists and contains `plugins/`:
 ```bash
-./ai-agent.sh --rm
+docker run --rm ai-agent:lite ls /opt/claude-seed/
 ```
-Expected: `.agent/` directory is created in the current directory before docker starts.
 
-- [ ] **Step 2: Check per-project volume is created**
+- [ ] **Step 2: First run — verify seeding**
 
 ```bash
-docker volume ls | grep ai-agent-claude
+cd /tmp && mkdir test-workspace && cd test-workspace
+/path/to/ai-agent.sh --rm --lite
 ```
-Expected: `ai-agent-claude-<dirname>` appears. The old `ai-agent-claude` global volume does NOT appear as a new entry.
 
-- [ ] **Step 3: Check history lands in `.agent/`**
-
-Inside the container, run a short Claude session:
+Inside container:
 ```bash
-claude -p "say hello"
+ls ~/.claude/plugins/   # should have superpowers, hookify etc.
+ls ~/.claude/settings.json   # should exist
+exit
 ```
-Then exit the container and check:
+
+On host:
 ```bash
-ls .agent/projects/
+ls /tmp/test-workspace/.agent/   # should mirror what was in ~/.claude/
+ls /tmp/test-workspace/.agent/.gitignore   # should exist
+cat /tmp/test-workspace/.agent/.gitignore
 ```
-Expected: a subdirectory exists (named after `/workspace` path, URL-encoded).
 
-- [ ] **Step 4: Check credentials are NOT in `.agent/`**
-
-```bash
-ls .agent/.credentials.json 2>/dev/null && echo "FAIL - credentials in workspace" || echo "OK - credentials not in workspace"
-ls .agent/claude.json 2>/dev/null && echo "FAIL - claude.json in workspace" || echo "OK - claude.json not in workspace"
-```
-Expected: both print `OK`.
-
-- [ ] **Step 5: Check history persists across container restarts**
+- [ ] **Step 3: Second run — verify workspace config persists (not overwritten)**
 
 ```bash
-# From the same project directory
-./ai-agent.sh --rm
-# Inside: run claude -p "remember the number 42"
-# Exit container
-./ai-agent.sh --rm
-# Inside: run claude -p "what number did I ask you to remember?"
+echo "# my custom addition" >> /tmp/test-workspace/.agent/CLAUDE.md
+cd /tmp/test-workspace && /path/to/ai-agent.sh --rm --lite
 ```
-Expected: second session has no memory of the first (Claude has no cross-session recall by default),
-but the `.agent/projects/` directory contains both session logs from the first run.
 
-- [ ] **Step 6: Check isolation between two projects**
+Inside container:
+```bash
+tail -1 ~/.claude/CLAUDE.md   # should show "# my custom addition"
+exit
+```
+
+- [ ] **Step 4: Verify credentials not in workspace**
 
 ```bash
-mkdir /tmp/project-a /tmp/project-b
-cd /tmp/project-a && ./path/to/ai-agent.sh --rm   # start session in project-a
-# Inside: run claude -p "hello from project a"
-# Exit
-cd /tmp/project-b && ./path/to/ai-agent.sh --rm   # start session in project-b
+ls /tmp/test-workspace/.agent/.credentials.json 2>/dev/null \
+  && echo "FAIL" || echo "OK — credentials not in workspace"
 ```
-Expected:
-- `/tmp/project-a/.agent/projects/` contains project-a history
-- `/tmp/project-b/.agent/projects/` is empty or only contains project-b history
-- `docker volume ls` shows `ai-agent-claude-project-a` and `ai-agent-claude-project-b` as separate volumes
+
+Expected: `OK`.
+
+- [ ] **Step 5: Verify isolation between workspaces**
+
+```bash
+mkdir /tmp/workspace-b && cd /tmp/workspace-b
+/path/to/ai-agent.sh --rm --lite
+```
+
+Expected: `/tmp/workspace-b/.agent/` is seeded fresh — does NOT contain any history or
+customisations from `/tmp/test-workspace/.agent/`.
