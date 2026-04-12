@@ -93,7 +93,8 @@ RUN su -s /bin/bash agent -c ' \
 
 # Snapshot baked .claude/ (plugins + initial config) so entrypoint can seed new workspaces.
 # Bind mounts don't auto-seed from image content the way named volumes do.
-RUN cp -r /home/agent/.claude /opt/claude-seed
+RUN cp -r /home/agent/.claude /opt/claude-seed \
+    && rm -f /opt/claude-seed/.credentials.json /opt/claude-seed/claude.json
 
 # Shell and tmux config
 COPY claude-config/zshrc  /home/agent/.zshrc

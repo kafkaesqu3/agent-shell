@@ -60,7 +60,8 @@
       "Read(~/Library/Application Support/**/exodus*/**)",
       "Read(~/Library/Application Support/**/phantom*/**)",
       "Read(~/Library/Application Support/**/solflare*/**)",
-      "Read(/opt/claude-config/**)"
+      "Read(/opt/claude-config/**)",
+      "Read(/opt/claude-seed/**)"
     ]
   },
   "hooks": {
