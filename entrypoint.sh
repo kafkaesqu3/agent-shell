@@ -41,10 +41,10 @@ chown agent:agent "$CLAUDE_JSON"
 trap 'cp -f "$CLAUDE_JSON" "$CLAUDE_JSON_STORE" 2>/dev/null || true' EXIT
 
 # --- Seed new workspace from golden image snapshot (no-clobber) ---
-# cp -rn skips files that already exist, so evolved workspaces are never overwritten.
+# cp --update=none skips files that already exist, so evolved workspaces are never overwritten.
 # New files added to the image snapshot propagate to existing workspaces on next start.
 if [ -d /opt/claude-seed ]; then
-  cp -rn /opt/claude-seed/. /home/agent/.claude/
+  cp -r --update=none /opt/claude-seed/. /home/agent/.claude/
 fi
 
 # --- Write .gitignore for workspace .agent/ directory (first run only) ---
