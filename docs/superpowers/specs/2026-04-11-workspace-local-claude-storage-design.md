@@ -1,7 +1,7 @@
 # Workspace-Local Claude Storage
 
 **Date:** 2026-04-11
-**Status:** Approved
+**Status:** Approved (revised)
 
 ## Problem
 
@@ -11,109 +11,75 @@ security concern and makes it impossible to reason about what context a session 
 
 ## Goal
 
-Scope all Claude data (conversation history, session state, config copies) to the workspace the
-container was launched from. Sensitive files must never be committable to git accidentally.
+Scope all Claude data to the workspace the container was launched from. Conversation history,
+memories, and per-project state must be accessible as plain files in the workspace. Sensitive
+files (credentials, session tokens) must never touch the workspace filesystem.
 
 ## Design
 
 ### Volume Strategy
 
-Replace the global named volume with a per-workspace bind mount:
+Replace the single global named volume with two mounts per container:
 
-```
-$(pwd)/.agent/   →   /home/agent/.claude/   (inside container)
-```
+| Mount | Type | Source | Container path |
+|-------|------|--------|----------------|
+| Per-project state | Named volume | `ai-agent-claude-<container-name>` | `/home/agent/.claude/` |
+| Conversation history | Bind mount | `$(pwd)/.agent/` (host) | `/home/agent/.claude/projects/` |
 
-- Every project gets its own isolated `.agent/` directory.
-- No cross-project history bleed.
-- All Claude data is scoped to that workspace: history, config copies, session state.
-- The bind mount is workspace-local, so logs are accessible as plain files on the host.
+The bind mount at `projects/` overlaps and shadows the named volume at that subpath. Docker
+processes mounts in order; the bind mount takes precedence for `/home/agent/.claude/projects/`.
 
-The global `ai-agent-claude` named volume is retired entirely.
+The old global `ai-agent-claude` named volume is retired. Each workspace gets its own
+`ai-agent-claude-<name>` volume, where `<name>` is the container name (which defaults to the
+workspace directory name).
 
-### Gitignore Protection
+### What Is Visible in the Workspace
 
-`entrypoint.sh` writes `/home/agent/.claude/.gitignore` (i.e. `$(pwd)/.agent/.gitignore` on the
-host) **if the file does not already exist**, so users can customize it. This runs on every
-container startup as the first write into the directory.
+| Data | Location on host | Accessible in `.agent/`? |
+|------|-----------------|--------------------------|
+| Conversation history | `$(pwd)/.agent/projects/` | Yes |
+| Memories (auto-memory files) | `$(pwd)/.agent/projects/<workspace>/memory/` | Yes |
+| MCP config | `claude-config/mcp-servers.json` (repo) | Yes (source of truth is the repo) |
+| Hook scripts | `claude-config/hooks/` (repo) | Yes (source of truth is the repo) |
+| Credentials | Named volume only | No — never in workspace |
+| `claude.json` session state | Named volume only | No — never in workspace |
 
-Default `.gitignore` content:
-
-```gitignore
-# Sensitive credentials — never commit
-.credentials.json
-claude.json
-
-# Config derived from Docker image — source of truth is claude-config/ in the repo
-settings.json
-CLAUDE.md
-CLAUDE.*.md
-commands/
-hooks/
-agents/
-statusline.sh
-.zshrc
-
-# Large downloaded caches — not useful to commit
-plugins/
-statsig/
-```
-
-`projects/` and `todos/` are intentionally left unignored — that is the conversation history
-the user wants accessible. Users can add them to the `.gitignore` manually if they do not
-want history tracked in git.
+No `.gitignore` is needed: sensitive files are in the named volume and never written to the
+workspace bind mount.
 
 ### `claude.json` Handling
 
-Claude Code writes session state to `~/.claude.json` (adjacent to `~/.claude/`, not inside it).
-The entrypoint's existing copy-in/copy-out pattern is unchanged:
-
-- **Startup:** copy `~/.claude/claude.json` (from bind mount = workspace) → `~/.claude.json`
-- **Exit trap:** copy `~/.claude.json` → `~/.claude/claude.json` (back into bind mount = workspace)
-
-The only change is that the backing store is now `$(pwd)/.agent/claude.json` instead of the
-global named volume. `claude.json` is covered by the auto-written `.gitignore`.
+Unchanged. The entrypoint's copy-in/copy-out pattern continues to work against the per-project
+named volume. No entrypoint changes are required.
 
 ### Launcher Changes (`ai-agent.sh` and `ai-agent.ps1`)
 
-1. Remove `-v "ai-agent-claude:/home/agent/.claude"`
-2. Add `-v "$(pwd)/.agent:/home/agent/.claude"` (bash) / `"${CurrentDir}/.agent:/home/agent/.claude"` (PS1)
-3. Create `$(pwd)/.agent/` before `docker run` so Docker does not create it root-owned
+1. Remove the `VOLUME_NAME="ai-agent-claude"` constant
+2. Derive a per-project volume name before building docker args:
+   `ai-agent-claude-${CONTAINER_NAME:-$(basename "$(pwd)")}` (bash)
+3. Replace the single volume mount with two mounts:
+   - `-v "ai-agent-claude-<name>:/home/agent/.claude"`
+   - `-v "$(pwd)/.agent:/home/agent/.claude/projects"`
+4. Create `$(pwd)/.agent/` before `docker run` so it is host-user-owned
+5. Remove the `sync` subcommand — it existed solely to copy `projects/` out of the container;
+   with the bind mount, history is already written directly to the workspace
 
-The `sync` subcommand is removed. It existed solely to copy logs out of the container into the
-host's `~/.claude/projects/`. With the bind mount design, logs are already written directly to
-the workspace — no sync step is needed.
+### Entrypoint Changes
 
-### Entrypoint Changes (`entrypoint.sh`)
-
-1. Write `.gitignore` into `/home/agent/.claude/` if it does not exist (new, runs first)
-2. No other changes — the `CLAUDE_JSON_STORE` copy-in/copy-out logic continues to work
-   unchanged; it now reads/writes `$(pwd)/.agent/claude.json` via the bind mount
-
-### What Persists vs. What Is Ephemeral
-
-| Data | Location | Persists across restarts? |
-|------|----------|--------------------------|
-| Conversation history | `$(pwd)/.agent/projects/` | Yes — bind-mounted to workspace |
-| Todos | `$(pwd)/.agent/todos/` | Yes — bind-mounted to workspace |
-| `claude.json` session state | `$(pwd)/.agent/claude.json` | Yes — via copy-out on exit |
-| Credentials | from host `~/.claude/.credentials.json` | Yes — re-injected each run |
-| Config (settings, CLAUDE.md, hooks…) | baked into image | Yes — reset from image each run |
-| Plugin cache | `$(pwd)/.agent/plugins/` | Yes — bind-mounted to workspace |
-| Statsig cache | `$(pwd)/.agent/statsig/` | Yes — bind-mounted to workspace |
-
-Everything that was previously in the global named volume is now either workspace-local or
-re-derived at startup. No data that matters is lost.
+None. All existing logic (config copy-in from image, credentials injection, `claude.json`
+copy-in/copy-out, MCP setup, skill profiles) continues to work unchanged against the
+per-project named volume.
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `ai-agent.sh` | Replace named volume with workspace bind mount; remove `sync` subcommand |
-| `ai-agent.ps1` | Same as above |
-| `entrypoint.sh` | Write auto-`.gitignore` on startup if not present |
+| `ai-agent.sh` | Per-project volume + projects bind mount; remove `sync`; add `mkdir -p .agent` |
+| `ai-agent.ps1` | Same |
+| `entrypoint.sh` | No changes |
 
 ## Out of Scope
 
 - Host mode (`--host`) — does not use Docker volumes; unaffected
-- The `--rm` ephemeral flag — bind mounts persist on host even when container is removed; behaviour improves (history survives `--rm` sessions)
+- Migration of history from the old `ai-agent-claude` global volume — users who want to
+  preserve old history can `docker cp` manually
