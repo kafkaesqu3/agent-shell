@@ -5,7 +5,6 @@
 # Configuration
 CLAUDE_HOME="$HOME/.claude"
 IMAGE_NAME="ai-agent:latest"
-VOLUME_NAME="ai-agent-claude"
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 
 # Colors
@@ -34,9 +33,6 @@ Options:
   --yolo              Enable --dangerously-skip-permissions (passed through to claude)
   -h, --help          Show this help message
 
-Subcommands:
-  sync                Copy session logs from container to ~/.claude/projects/
-
 .env resolution order:
   1. --env flag
   2. .env in current directory
@@ -47,7 +43,6 @@ Examples:
   ai-agent.sh                        # launch with auto-detected .env
   ai-agent.sh --env ~/.env.work      # use specific env file
   ai-agent.sh --browsing --rm        # ephemeral browsing container
-  ai-agent.sh --name myproject sync  # sync logs from named container
 EOF
 }
 
@@ -117,33 +112,9 @@ set -- "${_translated[@]+"${_translated[@]}"}"
 
 # When invoked as 'claude', inject 'claude' as the container command so that
 # 'claude foo' maps to 'docker run ... claude foo' inside the container.
-# Skip injection if 'sync' was given (handled below as a subcommand).
 # Skip injection in host mode — no container command is needed.
-if [[ "$INVOKED_AS" == "claude" && "${1:-}" != "sync" && "$HOST_MODE" != true ]]; then
+if [[ "$INVOKED_AS" == "claude" && "$HOST_MODE" != true ]]; then
     set -- claude "$@"
-fi
-
-# Handle subcommands
-if [[ "${1:-}" == "sync" ]]; then
-    if [ -z "$CONTAINER_NAME" ]; then
-        CONTAINER_NAME="$(basename "$(pwd)")"
-    fi
-    if ! docker info > /dev/null 2>&1; then
-        echo -e "${RED}Docker is not running!${NC}"; exit 1
-    fi
-    mkdir -p "$HOME/.claude/projects"
-    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
-        echo -e "${BLUE}Syncing from running container: $CONTAINER_NAME${NC}"
-    elif docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
-        echo -e "${BLUE}Syncing from stopped container: $CONTAINER_NAME${NC}"
-    else
-        echo -e "${RED}Container not found: $CONTAINER_NAME${NC}"
-        echo "Specify with --name, or run from the project directory (container is named after the directory)"
-        exit 1
-    fi
-    docker cp "${CONTAINER_NAME}:/home/agent/.claude/projects/." "$HOME/.claude/projects/" 2>/dev/null || true
-    echo -e "${GREEN}Session logs synced to ~/.claude/projects/${NC}"
-    exit 0
 fi
 
 # Resolve .env file: --env flag > .env in current dir > .env in script dir > ~/.config/ai-agent/.env
@@ -178,10 +149,16 @@ if [[ "$HOST_MODE" == true ]]; then
         exit 1
     fi
     if [[ -n "$ENV_FILE" && -f "$ENV_FILE" ]]; then
-        set -o allexport; source "$ENV_FILE"; set +o allexport
+        set -o allexport
+        # shellcheck source=/dev/null
+        source "$ENV_FILE"
+        set +o allexport
     fi
     if [[ -f "$PROFILE_ENV" ]]; then
-        set -o allexport; source "$PROFILE_ENV"; set +o allexport
+        set -o allexport
+        # shellcheck source=/dev/null
+        source "$PROFILE_ENV"
+        set +o allexport
     fi
     if [[ -n "$CLAUDE_MODEL" ]]; then
         exec claude-host --model "$CLAUDE_MODEL" "$@"
@@ -224,16 +201,16 @@ else
                 # Fall through to docker run below
             else
                 if [ $# -gt 0 ]; then
-                    exec docker exec -it "$CONTAINER_NAME" "$@"
+                    exec docker exec -it -u agent "$CONTAINER_NAME" "$@"
                 else
-                    exec docker exec -it "$CONTAINER_NAME" /bin/bash
+                    exec docker exec -it -u agent "$CONTAINER_NAME" /bin/bash
                 fi
             fi
         else
             if [ $# -gt 0 ]; then
-                exec docker exec -it "$CONTAINER_NAME" "$@"
+                exec docker exec -it -u agent "$CONTAINER_NAME" "$@"
             else
-                exec docker exec -it "$CONTAINER_NAME" /bin/bash
+                exec docker exec -it -u agent "$CONTAINER_NAME" /bin/bash
             fi
         fi
     fi
@@ -282,24 +259,11 @@ fi
 echo ""
 
 # Volumes
+mkdir -p "$(pwd)/.agent"
 DOCKER_ARGS+=("-v" "$(pwd):/workspace")
-DOCKER_ARGS+=("-v" "$VOLUME_NAME:/home/agent/.claude")
+DOCKER_ARGS+=("-v" "$(pwd)/.agent:/home/agent/.claude")
 
-# Optional: host CLAUDE.md override (staged for entrypoint processing)
-if [ -f "$CLAUDE_HOME/CLAUDE.md" ]; then
-    DOCKER_ARGS+=("-v" "$CLAUDE_HOME/CLAUDE.md:/opt/host-config/CLAUDE.md:ro")
-    echo -e "${GREEN}Mounting host CLAUDE.md${NC}"
-fi
-
-# Optional: host settings.json override
-if [ -f "$CLAUDE_HOME/settings.json" ]; then
-    DOCKER_ARGS+=("-v" "$CLAUDE_HOME/settings.json:/opt/host-config/settings.json:ro")
-    echo -e "${GREEN}Mounting host settings.json${NC}"
-fi
-
-# Optional: host credentials — staged outside the named volume so the
-# entrypoint can copy them in (bind-mounting a file inside a named-volume
-# directory is unreliable; the volume wins).
+# Optional: host credentials
 if [ -f "$CLAUDE_HOME/.credentials.json" ]; then
     DOCKER_ARGS+=("-v" "$CLAUDE_HOME/.credentials.json:/opt/host-config/.credentials.json:ro")
     echo -e "${GREEN}Mounting host credentials${NC}"
