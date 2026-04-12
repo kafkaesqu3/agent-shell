@@ -15,16 +15,11 @@ if [ "$(id -u agent)" != "$HOST_UID" ] || [ "$(id -g agent)" != "$HOST_GID" ]; t
 fi
 
 # --- Fix volume ownership (volume may be root-owned on first run) ---
-# Do NOT chown /workspace on Linux — it is a bind-mounted host directory and
-# chowning it would corrupt file ownership on the host.
-# On Windows (Docker Desktop), bind-mounted files always appear as root-owned
-# inside the container regardless of HOST_UID; chown there does not affect NTFS
-# ownership on the host, so it is safe to remap ownership to the agent user.
+# Named volumes are initialised owned by root; chown so agent can write config.
+# /workspace is NOT chowned: on Windows/macOS, Docker Desktop mounts bind paths
+# with 0777 so agent can write without owning them; on Linux the host UID matches
+# the container UID directly.
 chown -R agent:agent /home/agent/.config 2>/dev/null || true
-_ws_uid=$(stat -c %u /workspace 2>/dev/null || echo "0")
-if [ "$_ws_uid" = "0" ] && [ "$HOST_UID" != "0" ]; then
-  chown -R "${HOST_UID}:${HOST_GID}" /workspace 2>/dev/null || true
-fi
 
 # --- Persist ~/.claude.json across restarts via the named volume ---
 # ~/.claude.json sits next to ~/.claude/ and is not covered by the volume mount,
@@ -45,45 +40,25 @@ fi
 chown agent:agent "$CLAUDE_JSON"
 trap 'cp -f "$CLAUDE_JSON" "$CLAUDE_JSON_STORE" 2>/dev/null || true' EXIT
 
-# Config files are always overwritten from the baked image so that rebuilding
-# the image is sufficient to pick up changes from claude-config/ in the repo.
-# Only credentials and session state (history, projects) are preserved.
-
-# --- Config files: always sync from image ---
-if [ -f /opt/host-config/CLAUDE.md ]; then
-  cp /opt/host-config/CLAUDE.md /home/agent/.claude/CLAUDE.md
-else
-  cp /opt/claude-config/CLAUDE.md /home/agent/.claude/CLAUDE.md
-fi
-cp /opt/claude-config/CLAUDE.*.md /home/agent/.claude/ 2>/dev/null || true
-cp /opt/claude-config/settings.json /home/agent/.claude/settings.json
-if [ -f /opt/claude-config/statusline.sh ]; then
-  cp /opt/claude-config/statusline.sh /home/agent/.claude/statusline.sh
-  chmod +x /home/agent/.claude/statusline.sh
+# --- Seed new workspace from golden image snapshot (no-clobber) ---
+# cp -rn skips files that already exist, so evolved workspaces are never overwritten.
+# New files added to the image snapshot propagate to existing workspaces on next start.
+if [ -d /opt/claude-seed ]; then
+  cp -rn /opt/claude-seed/. /home/agent/.claude/
 fi
 
-# --- Copy slash commands ---
-if [ -d /opt/claude-config/commands ]; then
-  mkdir -p /home/agent/.claude/commands
-  cp /opt/claude-config/commands/*.md /home/agent/.claude/commands/
-fi
+# --- Write .gitignore for workspace .agent/ directory (first run only) ---
+if [ ! -f /home/agent/.claude/.gitignore ]; then
+  cat > /home/agent/.claude/.gitignore << 'GITIGNORE'
+# Sensitive credentials — never commit
+.credentials.json
+claude.json
 
-# --- Copy hook scripts ---
-if [ -d /opt/claude-config/hooks ]; then
-  mkdir -p /home/agent/.claude/hooks
-  cp /opt/claude-config/hooks/*.sh /home/agent/.claude/hooks/
-  chmod +x /home/agent/.claude/hooks/*.sh
+# Caches — large, auto-downloaded
+plugins/
+statsig/
+GITIGNORE
 fi
-
-# --- Copy agent definitions ---
-if [ -d /opt/claude-config/agents ]; then
-  mkdir -p /home/agent/.claude/agents
-  cp /opt/claude-config/agents/*.md /home/agent/.claude/agents/ 2>/dev/null || true
-fi
-
-# --- Sync shell and tmux dotfiles ---
-[ -f /opt/claude-config/zshrc     ] && cp /opt/claude-config/zshrc     /home/agent/.zshrc
-[ -f /opt/claude-config/tmux.conf ] && cp /opt/claude-config/tmux.conf /home/agent/.tmux.conf
 
 # --- Credentials: populate from host file or env var ---
 # Host file always wins (ensures host re-auth propagates into the container).
