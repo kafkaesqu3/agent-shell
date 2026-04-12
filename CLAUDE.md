@@ -34,9 +34,10 @@ claude-config/    →  baked into /opt/claude-config/ (Dockerfile COPY)
                   →  applied to ~/.claude/ on every start (entrypoint.sh)
 ```
 
-`entrypoint.sh` always overwrites config from the baked image, so rebuilding the image = config update.
-It also handles: UID/GID remapping, credential persistence, MCP env var substitution, skill profile
-merging, and dropping privileges to the `agent` user.
+`entrypoint.sh` seeds config on first run per workspace from the baked image. Rebuilding the image
+updates config for NEW workspaces only; existing workspaces evolve independently (delete files from
+`.agent/` to re-seed them). It also handles: UID/GID remapping, credential injection, MCP env var
+substitution, skill profile merging, and dropping privileges to the `agent` user.
 
 ### Hooks
 When making changes to this repository, consider if what you're implementing could be implented as a hook rather than an instruction. Always implement changes as hooks over prompts when possible. 

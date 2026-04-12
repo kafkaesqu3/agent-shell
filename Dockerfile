@@ -72,7 +72,7 @@ RUN mkdir -p /home/agent/.claude \
     && mkdir -p /workspace \
     && chown -R agent:agent /home/agent /workspace
 
-# Pre-install Claude Code plugins as agent user (baked into image; named volume inherits on first run)
+# Pre-install Claude Code plugins as agent user (baked into image; seeded to .agent/ on first workspace run)
 # Individual failures are non-fatal — marketplace availability can be transient
 RUN su -s /bin/bash agent -c ' \
     HOME=/home/agent; \

@@ -281,21 +281,31 @@ The base `.env` is auto-detected from:
 
 ## Configuration Layering
 
-Config files are baked into the Docker image from `claude-config/` and always written to the container on startup — so rebuilding the image is all you need to pick up changes. Credentials and session history persist in a named volume across restarts.
+Each workspace gets its own isolated `.agent/` directory that is bind-mounted to `/home/agent/.claude/` inside the container. On first run in a new workspace, `.agent/` is seeded from the golden image config; on subsequent runs, the workspace's own evolved config is used.
 
 ```
 claude-config/          ← source of truth (edit here, then rebuild)
         ↓
-docker build            ← bakes into /opt/claude-config/ inside image
+docker build            ← bakes into /opt/claude-seed/ inside image
         ↓
-entrypoint.sh           ← writes to /home/agent/.claude/ on every start
-                           patches __GITHUB_TOKEN__ / __BRAVE_API_KEY__ from env
-                           skips .credentials.json if already present
+entrypoint.sh           ← first run: seeds workspace/.agent/ from /opt/claude-seed/
+                           every run: patches __GITHUB_TOKEN__ / __BRAVE_API_KEY__ from env
+                           every run: writes .credentials.json from host ~/.claude/
         ↓
-ai-agent-claude volume  ← persists credentials + session history across restarts
+workspace/.agent/       ← bind-mounted to /home/agent/.claude/ inside container
+                           persists config, history, and memories per workspace
+                           evolves independently; never contains credentials
 ```
 
-To update config: edit `claude-config/`, rebuild (`docker build` or `./install.sh --docker`), restart.
+**Updating config:**
+- New workspaces automatically get the latest image config on first run.
+- Existing workspaces keep their own evolved config. To refresh specific files, delete them from
+  `workspace/.agent/` and restart — the entrypoint will re-seed them from the image.
+- Rebuilding the image does NOT update existing workspaces.
+
+**Credentials** are written from the host `~/.claude/.credentials.json` on every container start.
+Sensitive files (`.credentials.json`, `claude.json`) are excluded from `.agent/` via an
+entrypoint-written `.gitignore`, so they are never accidentally committed.
 
 ---
 

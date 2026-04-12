@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Entrypoint runs as root so it can fix volume ownership before dropping to
-# the agent user. Named volumes are initialised owned by root; without this
-# chown the agent user cannot write config files into the mounted directory.
+# Entrypoint runs as root so it can fix ownership before dropping to the agent
+# user. The bind mount and config directory may be root-owned on first run;
+# chown so agent can write config files.
 
 # --- Remap agent UID/GID to match the host user (prevents bind-mount ownership corruption) ---
 # ai-agent.sh passes HOST_UID / HOST_GID from $(id -u) / $(id -g) on the host.
@@ -50,7 +50,7 @@ fi
 # --- Write .gitignore for workspace .agent/ directory (first run only) ---
 if [ ! -f /home/agent/.claude/.gitignore ]; then
   cat > /home/agent/.claude/.gitignore << 'GITIGNORE'
-# Sensitive credentials — never commit
+# Sensitive credentials and runtime state — never commit
 .credentials.json
 claude.json
 
