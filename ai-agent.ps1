@@ -14,7 +14,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Show-Usage {
     Write-Host @"
-Usage: ai-agent.ps1 [OPTIONS] [SUBCOMMAND]
+Usage: ai-agent.ps1 [OPTIONS] [COMMAND...]
 
 Launch an AI agent Docker container with the current directory mounted as /workspace.
 
@@ -249,8 +249,10 @@ Write-Host ""
 # Volumes
 $CurrentDir = (Get-Location).Path
 $null = New-Item -ItemType Directory -Force -Path (Join-Path $CurrentDir ".agent")
-$DockerArgs += "-v"; $DockerArgs += "${CurrentDir}:/workspace"
-$DockerArgs += "-v"; $DockerArgs += "${CurrentDir}\.agent:/home/agent/.claude"
+$WorkspacePath = $CurrentDir.Replace('\', '/')
+$AgentPath = (Join-Path $CurrentDir ".agent").Replace('\', '/')
+$DockerArgs += "-v"; $DockerArgs += "${WorkspacePath}:/workspace"
+$DockerArgs += "-v"; $DockerArgs += "${AgentPath}:/home/agent/.claude"
 
 # Optional: host credentials - staged for entrypoint to copy into the bind mount.
 $ClaudeCreds = Join-Path $ClaudeHome ".credentials.json"

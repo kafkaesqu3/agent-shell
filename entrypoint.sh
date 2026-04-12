@@ -21,7 +21,7 @@ fi
 # the container UID directly.
 chown -R agent:agent /home/agent/.config 2>/dev/null || true
 
-# --- Persist ~/.claude.json across restarts via the named volume ---
+# --- Persist ~/.claude.json across restarts via the workspace bind mount ---
 # ~/.claude.json sits next to ~/.claude/ and is not covered by the volume mount,
 # so it disappears on every container restart. We copy it in from the volume at
 # startup and trap EXIT to write it back, keeping it as a plain file throughout.
@@ -63,7 +63,7 @@ fi
 # --- Credentials: populate from host file or env var ---
 # Host file always wins (ensures host re-auth propagates into the container).
 # Env var is used in headless/CI deployments where no host file exists.
-# If neither is available, existing credentials in the named volume are kept
+# If neither is available, existing credentials in the workspace are kept
 # so that logging in interactively inside the container persists across runs.
 if [ -f /opt/host-config/.credentials.json ]; then
   cp /opt/host-config/.credentials.json /home/agent/.claude/.credentials.json

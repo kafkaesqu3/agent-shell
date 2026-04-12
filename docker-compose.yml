@@ -13,7 +13,7 @@ services:
         required: false
     volumes:
       - .:/workspace
-      - ai-agent-claude:/home/agent/.claude
+      - ./.agent:/home/agent/.claude
       - ai-agent-config:/home/agent/.config
     working_dir: /workspace
 
@@ -34,7 +34,7 @@ services:
         required: false
     volumes:
       - .:/workspace
-      - ai-agent-claude:/home/agent/.claude
+      - ./.agent:/home/agent/.claude
       - ai-agent-config:/home/agent/.config
     working_dir: /workspace
 
@@ -53,12 +53,10 @@ services:
         required: false
     volumes:
       - .:/workspace
-      - ai-agent-claude:/home/agent/.claude
+      - ./.agent:/home/agent/.claude
       - ai-agent-config:/home/agent/.config
     working_dir: /workspace
 
 volumes:
-  ai-agent-claude:
-    name: ai-agent-claude
   ai-agent-config:
     name: ai-agent-config

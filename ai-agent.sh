@@ -16,7 +16,7 @@ NC='\033[0m'
 
 usage() {
     cat <<EOF
-Usage: ai-agent.sh [OPTIONS] [SUBCOMMAND]
+Usage: ai-agent.sh [OPTIONS] [COMMAND...]
 
 Launch an AI agent Docker container with the current directory mounted as /workspace.
 
@@ -180,6 +180,8 @@ fi
 echo -e "${GREEN}Docker is running${NC}"
 
 # Build docker run command as an array (safe word-splitting, no eval)
+CWD="$(pwd)"
+mkdir -p "$CWD/.agent"
 DOCKER_ARGS=("docker" "run" "-it")
 if [ "$USE_RM" = true ]; then
     DOCKER_ARGS+=("--rm")
@@ -259,9 +261,8 @@ fi
 echo ""
 
 # Volumes
-mkdir -p "$(pwd)/.agent"
-DOCKER_ARGS+=("-v" "$(pwd):/workspace")
-DOCKER_ARGS+=("-v" "$(pwd)/.agent:/home/agent/.claude")
+DOCKER_ARGS+=("-v" "$CWD:/workspace")
+DOCKER_ARGS+=("-v" "$CWD/.agent:/home/agent/.claude")
 
 # Optional: host credentials
 if [ -f "$CLAUDE_HOME/.credentials.json" ]; then
