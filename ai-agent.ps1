@@ -10,7 +10,6 @@ param(
 # Configuration
 $ClaudeHome = "$env:USERPROFILE\.claude"
 $ImageName = "ai-agent:latest"
-$VolumeName = "ai-agent-claude"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 function Show-Usage {
@@ -32,9 +31,6 @@ Options:
   --yolo              Enable --dangerously-skip-permissions (passed through to claude)
   -h, --help          Show this help message
 
-Subcommands:
-  sync                Copy session logs from container to ~\.claude\projects\
-
 .env resolution order:
   1. --env flag
   2. .env in current directory
@@ -45,7 +41,6 @@ Examples:
   .\ai-agent.ps1                           # launch with auto-detected .env
   .\ai-agent.ps1 --env ~\.env.work         # use specific env file
   .\ai-agent.ps1 --browsing --rm           # ephemeral browsing container
-  .\ai-agent.ps1 --name myproject sync     # sync logs from named container
 "@
 }
 
@@ -105,36 +100,8 @@ $PassArgs = @($PassArgs | ForEach-Object { if ($_ -eq '--yolo') { '--dangerously
 # When invoked as 'claude', inject 'claude' as the container command so that
 # 'claude foo' maps to 'docker run ... claude foo' inside the container.
 $InvokedAs = [System.IO.Path]::GetFileNameWithoutExtension($MyInvocation.MyCommand.Name)
-if ($InvokedAs -eq 'claude' -and ($PassArgs.Count -eq 0 -or $PassArgs[0] -ne 'sync')) {
+if ($InvokedAs -eq 'claude') {
     $PassArgs = @('claude') + $PassArgs
-}
-
-# Handle subcommands
-if ($PassArgs.Count -gt 0 -and $PassArgs[0] -eq "sync") {
-    if (-not $ContainerName) {
-        $ContainerName = (Get-Location | Split-Path -Leaf)
-    }
-    try {
-        docker info 2>&1 | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "not running" }
-    } catch {
-        Write-Host "Docker is not running!" -ForegroundColor Red; exit 1
-    }
-    $null = New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.claude\projects"
-    $running = docker ps --format '{{.Names}}' 2>$null | Where-Object { $_ -eq $ContainerName }
-    $stopped = docker ps -a --format '{{.Names}}' 2>$null | Where-Object { $_ -eq $ContainerName }
-    if ($running) {
-        Write-Host "Syncing from running container: $ContainerName" -ForegroundColor Cyan
-    } elseif ($stopped) {
-        Write-Host "Syncing from stopped container: $ContainerName" -ForegroundColor Cyan
-    } else {
-        Write-Host "Container not found: $ContainerName" -ForegroundColor Red
-        Write-Host "Specify with --name, or run from the project directory"
-        exit 1
-    }
-    docker cp "${ContainerName}:/home/agent/.claude/projects/." "$env:USERPROFILE\.claude\projects\" 2>$null
-    Write-Host "Session logs synced to ~\.claude\projects\" -ForegroundColor Green
-    exit 0
 }
 
 # Resolve .env file: --env flag > .env in current dir > .env in script dir > ~/.config/ai-agent/.env
@@ -220,17 +187,17 @@ if ($UseRm) {
                 # Fall through to docker run below
             } else {
                 if ($PassArgs.Count -gt 0) {
-                    & docker exec -it $ContainerName @PassArgs
+                    & docker exec -it -u agent $ContainerName @PassArgs
                 } else {
-                    & docker exec -it $ContainerName /bin/bash
+                    & docker exec -it -u agent $ContainerName /bin/bash
                 }
                 exit $LASTEXITCODE
             }
         } else {
             if ($PassArgs.Count -gt 0) {
-                & docker exec -it $ContainerName @PassArgs
+                & docker exec -it -u agent $ContainerName @PassArgs
             } else {
-                & docker exec -it $ContainerName /bin/bash
+                & docker exec -it -u agent $ContainerName /bin/bash
             }
             exit $LASTEXITCODE
         }
@@ -281,26 +248,11 @@ Write-Host ""
 
 # Volumes
 $CurrentDir = (Get-Location).Path
+$null = New-Item -ItemType Directory -Force -Path (Join-Path $CurrentDir ".agent")
 $DockerArgs += "-v"; $DockerArgs += "${CurrentDir}:/workspace"
-$DockerArgs += "-v"; $DockerArgs += "${VolumeName}:/home/agent/.claude"
+$DockerArgs += "-v"; $DockerArgs += "${CurrentDir}\.agent:/home/agent/.claude"
 
-# Optional: host CLAUDE.md override (staged for entrypoint processing)
-$ClaudeMd = Join-Path $ClaudeHome "CLAUDE.md"
-if (Test-Path $ClaudeMd) {
-    $DockerArgs += "-v"; $DockerArgs += "${ClaudeMd}:/opt/host-config/CLAUDE.md:ro"
-    Write-Host "Mounting host CLAUDE.md" -ForegroundColor Green
-}
-
-# Optional: host settings.json override (staged for entrypoint processing)
-$ClaudeSettings = Join-Path $ClaudeHome "settings.json"
-if (Test-Path $ClaudeSettings) {
-    $DockerArgs += "-v"; $DockerArgs += "${ClaudeSettings}:/opt/host-config/settings.json:ro"
-    Write-Host "Mounting host settings.json" -ForegroundColor Green
-}
-
-# Optional: host credentials - staged outside the named volume so the
-# entrypoint can copy them in (bind-mounting a file inside a named-volume
-# directory is unreliable; the volume wins).
+# Optional: host credentials - staged for entrypoint to copy into the bind mount.
 $ClaudeCreds = Join-Path $ClaudeHome ".credentials.json"
 if (Test-Path $ClaudeCreds) {
     $DockerArgs += "-v"; $DockerArgs += "${ClaudeCreds}:/opt/host-config/.credentials.json:ro"
